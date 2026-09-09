@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <title>Konsey — piksel ofis denemesi</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 24px;
+        background: #f5f2ea;
+        font: 13px -apple-system, system-ui, sans-serif;
+        color: #3d3a34;
+      }
+      h1 { font-size: 15px; margin: 0 0 14px; }
+      #stage {
+        background: #efe9dd;
+        border: 1px solid #ddd3c2;
+        border-radius: 10px;
+        overflow: hidden;
+        width: 900px;
+      }
+      canvas { display: block; image-rendering: pixelated; }
+      .row { margin-top: 14px; display: flex; gap: 6px; flex-wrap: wrap; }
+      button {
+        font: inherit;
+        padding: 5px 11px;
+        border-radius: 7px;
+        border: 1px solid #d6cbb8;
+        background: #fbf8f2;
+        cursor: pointer;
+      }
+      button:hover { border-color: #c1502e; }
+    </style>
+  </head>
+  <body>
+    <h1>Piksel ofis — durum denemesi</h1>
+    <div id="stage"><canvas id="office"></canvas></div>
+    <div class="row" id="controls"></div>
+    <script src="demo.js"></script>
+  </body>
+</html>

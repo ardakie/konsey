@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "lib": ["ES2023", "DOM"],
+    "outDir": "dist",
+    "rootDir": ".",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "sourceMap": true,
+    "declaration": false,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["src/**/*.ts", "electron/**/*.ts"],
+  "exclude": ["node_modules", "dist", "ui/**/*"]
+}

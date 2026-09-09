@@ -1,0 +1,69 @@
+{
+  "name": "konsey",
+  "version": "0.1.0",
+  "description": "Claude, Codex ve Antigravity ajanlarini tek bir proje uzerinde koordine eden Mac uygulamasi",
+  "main": "dist/electron/main.js",
+  "type": "commonjs",
+  "scripts": {
+    "build:main": "tsc -p tsconfig.json",
+    "build:ui": "esbuild ui/renderer.ts --bundle --outfile=dist/ui/renderer.js --platform=browser --format=iife --target=es2022",
+    "copy:ui": "mkdir -p dist/ui && cp ui/index.html dist/ui/index.html && cp ui/styles.css dist/ui/styles.css && rm -rf dist/ui/assets && cp -R ui/pixel/assets dist/ui/assets",
+    "build": "npm run build:main && npm run copy:ui && npm run build:ui",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc --noEmit --target ES2022 --module commonjs --moduleResolution node --lib ES2022,DOM ui/renderer.ts ui/devMock.ts ui/pixel/office.ts ui/pixel/pixelFont.ts",
+    "test": "npm run build:main && node --test tests/*.test.js",
+    "verify": "npm run typecheck && npm test && npm run build",
+    "start": "npm run build && electron dist/electron/main.js",
+    "cli": "npm run build:main && node dist/src/cli.js",
+    "doctor": "npm run build:main && node dist/src/cli.js doctor",
+    "icon": "node scripts/make-icon.js",
+    "prepackage": "node scripts/check-app-not-running.js",
+    "package": "npm run build && npm run icon && electron-builder --mac --arm64",
+    "prepackage:dir": "node scripts/check-app-not-running.js",
+    "package:dir": "npm run build && npm run icon && electron-builder --mac dir --arm64",
+    "ui": "npm run build && python3 -m http.server 8124 --directory dist/ui"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "electron": "^33.3.1",
+    "electron-builder": "^25.1.8",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.7.2"
+  },
+  "build": {
+    "appId": "com.ardakie.konsey",
+    "productName": "Konsey",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "icon": "build/icon.png",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        },
+        {
+          "target": "dir",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "identity": null,
+      "extendInfo": {
+        "LSMinimumSystemVersion": "11.0"
+      }
+    },
+    "dmg": {
+      "title": "Konsey"
+    }
+  }
+}

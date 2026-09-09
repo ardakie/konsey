@@ -1,0 +1,29 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "konsey-pixel-demo",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8123",
+        "--directory",
+        "ui/pixel"
+      ],
+      "port": 8123
+    },
+    {
+      "name": "konsey-app-ui",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8124",
+        "--directory",
+        "dist/ui"
+      ],
+      "port": 8124
+    }
+  ]
+}
