@@ -30,15 +30,18 @@ import {
 } from './git';
 import {
   DEFAULT_PROFILES,
+  tierOf,
   arbitrationPrompt,
   claimPrompt,
   executionPrompt,
   plannerPrompt,
   reviewPrompt,
 } from './prompts';
+import { COST_ORDER } from '../shared/types';
 import type {
   AgentId,
   AgentProfile,
+  CostTier,
   AgentRunResult,
   ClaimResponse,
   ProviderConfig,
@@ -80,6 +83,8 @@ export class Orchestrator {
   readonly bus = new EventBus();
   private run: RunRecord | null = null;
   private providers: ProviderConfig[] = [];
+  /** Etkin butun ajanlarin profili; maliyet katmani aramalarinda kullanilir. */
+  private profileIndex = new Map<AgentId, AgentProfile>();
   /** Kota/oturum nedeniyle bu calisma boyunca devre disi kalan ajanlar. */
   private downed = new Map<AgentId, { reason: string; retryAt?: number; retryHint?: string }>();
 
@@ -223,8 +228,10 @@ export class Orchestrator {
         label: p.label,
         strengths: p.strengths,
         enabled: true,
+        costTier: p.costTier ?? 'cheap',
       }));
     const allProfiles = [...profiles, ...providerProfiles];
+    this.profileIndex = new Map(allProfiles.map((p) => [p.agent, p]));
 
     // Kod yazamayan saglayicilar gorev havuzuna girmez, yalnizca koordinasyon yapar.
     const enabled = allProfiles
@@ -236,11 +243,19 @@ export class Orchestrator {
       });
     // Koordinator kod yazmaz; kod yazamayan bir saglayici da bu rolu ustlenebilir.
     const coordinationPool = allProfiles.filter((p) => p.enabled).map((p) => p.agent);
-    const coordinator =
-      opts.coordinator ?? (coordinationPool.includes('claude') ? 'claude' : coordinationPool[0]);
     const execTimeout = opts.executeTimeoutMs ?? DEFAULTS.executeTimeoutMs;
     const coordTimeout = opts.coordinateTimeoutMs ?? DEFAULTS.coordinateTimeoutMs;
     const overallComplexity = this.requestComplexity(opts.prompt);
+
+    // Basit bir istek icin pahali bir modele plan yaptirmak bosa kota harciyor:
+    // kucuk isleri en ucuz koordinator planlasin, agir isler Claude'a kalsin.
+    const coordinator =
+      opts.coordinator ??
+      (overallComplexity === 'low'
+        ? this.cheapestOf(coordinationPool) ?? coordinationPool[0]
+        : coordinationPool.includes('claude')
+          ? 'claude'
+          : coordinationPool[0]);
 
     const runId = randomUUID().slice(0, 8);
     const run: RunRecord = {
@@ -403,6 +418,7 @@ export class Orchestrator {
         t.status = 'claimed';
       }
       this.assertBalanced(run.tasks, assignable);
+      this.enforceCostPolicy(run.tasks, assignable);
       for (const t of run.tasks) this.log('orchestrator', `${t.id} -> ${t.assignedTo}: ${t.title}`);
       this.touch();
 
@@ -615,8 +631,64 @@ export class Orchestrator {
     return { agent, res };
   }
 
+  /** Bir ajanin maliyet katmani. Profil yoksa saglayicilar ucuz, abonelikler pahali sayilir. */
+  private tier(agent: AgentId): CostTier {
+    const profile = this.profileIndex.get(agent);
+    if (profile) return tierOf(profile);
+    return agent.startsWith('provider:') ? 'cheap' : 'premium';
+  }
+
+  /** Verilen ajanlar icinde en ucuz olani; esitlikte yapilandirma sirasi belirler. */
+  private cheapestOf(agents: AgentId[]): AgentId | null {
+    const healthy = this.healthy(agents);
+    if (healthy.length === 0) return null;
+    return healthy.reduce((best, a) =>
+      COST_ORDER[this.tier(a)] < COST_ORDER[this.tier(best)] ? a : best,
+    );
+  }
+
+  /**
+   * Maliyet politikasini kesin olarak uygular.
+   *
+   * Hakemlik bir dil modeli tarafindan yapiliyor ve model, "tek dosya olustur"
+   * gibi onemsiz bir isi pahali bir aboneliğe verebiliyor. Bu, kotayi bosa
+   * harciyor. Bu yuzden karar modele birakilmiyor: zorlugu "low" olan gorevler
+   * uygun en ucuz ajanlara zorla dagitiliyor.
+   *
+   * Gorsel uretim gerektiren gorevler disarida birakiliyor; onlar yalnizca
+   * belirli bir abonelikte yapilabiliyor.
+   */
+  private enforceCostPolicy(tasks: Task[], assignable: AgentId[]): void {
+    const candidates = this.healthy(assignable)
+      .filter((a) => this.tier(a) === 'cheap')
+      .sort((a, b) => assignable.indexOf(a) - assignable.indexOf(b));
+    if (candidates.length === 0) return;
+
+    // Ucuz ajanlar arasinda sirayla dagit ki tek uce yigilmasin.
+    let next = 0;
+    for (const task of tasks) {
+      if (task.complexity !== 'low' || task.requiresVisual) continue;
+      if (!task.assignedTo || this.tier(task.assignedTo) === 'cheap') continue;
+
+      const target = candidates[next % candidates.length];
+      next++;
+      this.log(
+        'orchestrator',
+        `${task.id} maliyet kurali geregi ${agentLabel(task.assignedTo, this.providers)} yerine ` +
+          `${agentLabel(target, this.providers)} ajanina verildi (zorluk: low).`,
+      );
+      task.assignedTo = target;
+    }
+  }
+
   /** Hakem bir gorevi atlamissa: en yuksek guveni veren ajan, o da yoksa en az yuklu ajan. */
   private fallbackAssign(task: Task, claims: ClaimResponse[], enabled: AgentId[]): AgentId {
+    // Basit isler icin talep puanina bakmadan dogrudan en ucuz ajana git.
+    if (task.complexity === 'low' && !task.requiresVisual) {
+      const cheap = this.cheapestOf(enabled);
+      if (cheap && this.tier(cheap) === 'cheap') return cheap;
+    }
+
     let best: { agent: AgentId; confidence: number } | null = null;
     for (const c of claims) {
       if (!enabled.includes(c.agent)) continue;
@@ -652,6 +724,14 @@ export class Orchestrator {
   private pickReviewer(enabled: AgentId[], tasks: Task[]): AgentId {
     const counts = enabled.map((a) => ({ a, n: tasks.filter((t) => t.assignedTo === a).length }));
     counts.sort((x, y) => x.n - y.n);
+
+    // Butun isler basitse incelemeyi de pahali bir aboneliğe yaptirmanin anlami yok:
+    // is yapmamis en ucuz ajani sec, yoksa en az yuklu olana dus.
+    if (tasks.length > 0 && tasks.every((t) => t.complexity === 'low')) {
+      const idle = counts.filter((c) => c.n === 0).map((c) => c.a);
+      const cheap = this.cheapestOf(idle.length ? idle : enabled);
+      if (cheap) return cheap;
+    }
     return counts[0].a;
   }
 }

@@ -1,5 +1,5 @@
 /** Ajanlara gonderilen istem sablonlari. Tek yerde tutuluyor ki ayarlamak kolay olsun. */
-import type { AgentId, AgentProfile, Task } from '../shared/types';
+import type { AgentId, AgentProfile, CostTier, Task } from '../shared/types';
 
 export const DEFAULT_PROFILES: AgentProfile[] = [
   {
@@ -9,6 +9,7 @@ export const DEFAULT_PROFILES: AgentProfile[] = [
       'Genis capli refactor, mimari kararlar, karmasik is mantigi, cok dosyaya yayilan degisiklikler, ' +
       'test yazimi ve kod incelemesi.',
     enabled: true,
+    costTier: 'premium',
   },
   {
     agent: 'codex',
@@ -17,6 +18,7 @@ export const DEFAULT_PROFILES: AgentProfile[] = [
       'Kesin ve dar kapsamli kod degisiklikleri, algoritma ve veri yapisi isleri, hata ayiklama, ' +
       'betik yazimi, mevcut testleri gecirme.',
     enabled: true,
+    costTier: 'premium',
   },
   {
     agent: 'antigravity',
@@ -25,15 +27,37 @@ export const DEFAULT_PROFILES: AgentProfile[] = [
       'Arayuz ve on yuz calismasi, tarayicida dogrulama, gorsel kontrol, dokumantasyon, ' +
       'genis kod tabaninda kesif.',
     enabled: false,
+    costTier: 'standard',
   },
 ];
+
+const TIER_LABEL: Record<CostTier, string> = {
+  cheap: 'UCUZ',
+  standard: 'ORTA',
+  premium: 'PAHALI',
+};
+
+export function tierOf(profile: AgentProfile): CostTier {
+  return profile.costTier ?? (profile.agent.startsWith('provider:') ? 'cheap' : 'premium');
+}
 
 function profileBlock(profiles: AgentProfile[]): string {
   return profiles
     .filter((p) => p.enabled)
-    .map((p) => `- ${p.agent} (${p.label}): ${p.strengths}`)
+    .map((p) => `- ${p.agent} (${p.label}) [maliyet: ${TIER_LABEL[tierOf(p)]}]: ${p.strengths}`)
     .join('\n');
 }
+
+/** Her iki koordinasyon isteminde de ayni maliyet kurali gecerli. */
+const COST_RULE = `MALIYET KURALI (en onemli kural):
+- PAHALI ajanlar sinirli abonelik kotasi harciyor; onlari yalnizca gercekten gerektiginde kullan.
+- Basit, mekanik, tek dosyalik isler (dosya olusturma, metin/README duzenlemesi, yeniden
+  adlandirma, sabit degisikligi, kucuk yapilandirma dokunuslari) UCUZ ajana verilir.
+  Bunun icin PAHALI ajan kullanmak acik bir hatadir.
+- ORTA maliyetli ajan, ucuz ajanin zorlanacagi ama pahali ajani hak etmeyen orta isler icindir.
+- PAHALI ajanlari sakla: cok dosyaya yayilan refactor, mimari kararlar, karmasik hata ayiklama,
+  guvenlik ve veri butunlugu isleri, zor algoritmalar.
+- Kisacasi: isi yapabilecek EN UCUZ ajani sec. Yetenek esitse maliyet belirleyicidir.`;
 
 /** Adim 1 — gorevi bagimsiz parcalara bolen planlayici istemi. */
 export function plannerPrompt(
@@ -61,12 +85,16 @@ Kurallar:
   varsa bunlari tek gorevde birlestir ya da aralarina dependsOn bagi koy.
 - "scope" alanina gorevin dokunacagi dosya/klasor yollarini yaz. Bu, catisma tahmini icin kullanilir.
 - Istek tek bir ajanla yapilacak kadar kucukse tek gorev uret; yapay olarak bolme.
-- suggestedAgent alanini ajanlarin guclu yanlarina gore doldur.
-- complexity alanini low, medium, high veya critical olarak doldur. critical yalnizca guvenlik,
-  veri kaybi riski veya gercekten zor mimari kararlar icindir.
+- suggestedAgent alanini ajanlarin guclu yanlarina VE maliyetine gore doldur.
+- complexity alanini low, medium, high veya critical olarak doldur. low = tek dosyalik,
+  mekanik, dusunmeden yapilabilecek is. critical yalnizca guvenlik, veri kaybi riski veya
+  gercekten zor mimari kararlar icindir. Bu alan hangi ajanin secilecegini dogrudan belirler,
+  bu yuzden abartma: basit ise "low" yaz.
 - Yeni bir raster gorsel/illustrasyon uretilmesi gerekiyorsa requiresVisual=true yap ve Codex'i
   oner; Codex bu durumda ChatGPT'nin gorsel uretim aracini kullanir. Mevcut SVG/CSS/canvas
   varliklarini kodla duzenlemek gorsel uretim sayilmaz.
+
+${COST_RULE}
 
 Cevabini SADECE su bicimde, tek bir JSON kod blogu olarak ver. Baska hicbir sey yazma:
 
@@ -94,7 +122,7 @@ export function claimPrompt(agent: AgentId, tasks: Task[], projectContext: strin
   const list = tasks
     .map(
       (t) =>
-        `- ${t.id}: ${t.title}\n  Detay: ${t.detail}\n  Kapsam: ${t.scope.join(', ') || '(belirtilmemis)'}`,
+        `- ${t.id}: ${t.title} [zorluk: ${t.complexity}]\n  Detay: ${t.detail}\n  Kapsam: ${t.scope.join(', ') || '(belirtilmemis)'}`,
     )
     .join('\n');
 
@@ -131,7 +159,9 @@ export function arbitrationPrompt(
   claimsText: string,
   profiles: AgentProfile[],
 ): string {
-  const list = tasks.map((t) => `- ${t.id}: ${t.title} (kapsam: ${t.scope.join(', ') || 'yok'})`).join('\n');
+  const list = tasks
+    .map((t) => `- ${t.id}: ${t.title} [zorluk: ${t.complexity}] (kapsam: ${t.scope.join(', ') || 'yok'})`)
+    .join('\n');
 
   return `Sen bir yazilim ekibinin teknik liderisin. Uc ajan asagidaki gorevleri paylasmak icin
 talepte bulundu. Her gorevi TAM OLARAK BIR ajana ata.
@@ -148,8 +178,10 @@ ${claimsText}
 Kurallar:
 - Her gorev tam olarak bir ajana atanmali; hicbir gorev atanmadan kalmamali.
 - Isi ajanlar arasinda dengeli dagit. Bir ajana her seyi yukleme.
-- Guven puani yuksek olani tercih et, ama denge ve uzmanlik daha onemli.
+- Guven puani yuksek olani tercih et, ama denge, uzmanlik ve MALIYET daha onemli.
 - Bir gorevi hicbir ajan istemiyorsa yine de en uygun olana ata.
+
+${COST_RULE}
 
 Cevabini SADECE su bicimde, tek bir JSON kod blogu olarak ver. Baska hicbir sey yazma:
 

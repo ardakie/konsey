@@ -17,3 +17,6 @@ build/icon.icns
 # esbuild ciktilari (demo sayfasi)
 ui/pixel/demo.js
 ui/pixel/demo-inline.html
+
+# Graphify architecture outputs
+graphify-out/

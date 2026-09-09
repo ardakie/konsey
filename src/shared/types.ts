@@ -23,6 +23,18 @@ export function providerSlug(id: ProviderAgentId): string {
 }
 
 /** Kullanicinin ekledigi OpenAI uyumlu saglayici tanimi. Anahtar burada TUTULMAZ. */
+/**
+ * Bir ajani calistirmanin bagil maliyeti. Gorev dagitimi bunu okur:
+ * basit isler en ucuz ajana gider, pahali abonelikler zor isler icin saklanir.
+ *
+ * - cheap    : kullanicinin kendi API anahtari (or. DeepSeek uclari)
+ * - standard : maliyeti orta, kotasi genis abonelik
+ * - premium  : pahali abonelik modeli (Claude Opus, Codex Astra)
+ */
+export type CostTier = 'cheap' | 'standard' | 'premium';
+
+export const COST_ORDER: Record<CostTier, number> = { cheap: 0, standard: 1, premium: 2 };
+
 export interface ProviderConfig {
   /** Kisa kimlik, or. "orfi". Agent id'si `provider:<slug>` olur. */
   slug: string;
@@ -38,6 +50,8 @@ export interface ProviderConfig {
    * (planlama, hakemlik, inceleme) turlarinda gorevlendirilir.
    */
   canWriteCode: boolean;
+  /** Bagil maliyet. Belirtilmezse "cheap" kabul edilir: bunlar kullanicinin kendi anahtarlaridir. */
+  costTier?: CostTier;
   /** Istek basina uretim siniri. */
   maxTokens: number;
 }
@@ -221,4 +235,6 @@ export interface AgentProfile {
   /** Planlayiciya verilen "bu ajan neyde iyi" tanimi. Kullanici duzenleyebilir. */
   strengths: string;
   enabled: boolean;
+  /** Bagil maliyet; gorev dagitiminda ucuz ajanlar oncelenir. */
+  costTier?: CostTier;
 }
