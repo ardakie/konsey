@@ -7,7 +7,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import type { AgentId, AgentProfile, ProviderConfig } from '../shared/types';
+import type { AgentId, AgentProfile, IntegrationConfig, ProviderConfig } from '../shared/types';
 import { DEFAULT_PROFILES } from './prompts';
 
 const DIR = path.join(os.homedir(), '.konsey');
@@ -26,6 +26,8 @@ export interface KonseyConfig {
   autoApply: boolean;
   /** Kullanicinin listeden kaldirdigi CLI sablonlari; otomatik kesif bunlari geri eklemez. */
   dismissedClis: string[];
+  /** Bagli servisler (GitHub, Sentry...). Token'lar guvenli depodadir. */
+  integrations: IntegrationConfig[];
   /** Arayuz tercihleri. */
   ui: {
     theme: 'system' | 'light' | 'dark';
@@ -47,6 +49,7 @@ export const DEFAULT_CONFIG: KonseyConfig = {
   recentProjects: [],
   autoApply: true,
   dismissedClis: [],
+  integrations: [],
   ui: { theme: 'system', mode: 'auto', chatOpen: true, officeOpen: true, language: 'system', onboarded: false },
 };
 
@@ -68,6 +71,7 @@ export async function loadConfig(): Promise<KonseyConfig> {
       recentProjects: parsed.recentProjects ?? [],
       autoApply: parsed.autoApply ?? true,
       dismissedClis: parsed.dismissedClis ?? [],
+      integrations: parsed.integrations ?? [],
       ui: { ...DEFAULT_CONFIG.ui, ...(parsed.ui ?? {}) },
     };
   } catch {

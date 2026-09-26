@@ -45,6 +45,21 @@ export interface SystemInfo {
   node: boolean;
 }
 
+/** Entegrasyon satiri; token degeri arayuze hic gelmez. */
+export interface IntegrationEntry {
+  id: string;
+  label: string;
+  blurb: string;
+  tokenUrl: string;
+  tokenHint: string;
+  supportsReadOnly: boolean;
+  readOnly: boolean;
+  enabled: boolean;
+  hasToken: boolean;
+  engines: string[];
+  custom: boolean;
+}
+
 /** Kurulabilir/baglanabilir bir ajan (hazir uclu ya da CLI sablonu). */
 export interface ConnectEntry {
   id: string;
@@ -96,6 +111,10 @@ export interface KonseyApi {
   relaunch(): Promise<void>;
   checkUpdate(): Promise<{ current: string; latest: string | null; available: boolean; url: string }>;
   openDownloads(): Promise<boolean>;
+  integrations(): Promise<IntegrationEntry[]>;
+  saveIntegration(input: { id: string; token?: string; readOnly?: boolean; enabled?: boolean; label?: string; url?: string }): Promise<{ ok: boolean; error?: string }>;
+  removeIntegration(id: string): Promise<boolean>;
+  testIntegration(id: string, token?: string): Promise<{ ok: boolean; detail: string }>;
 
   browser(action: string, value?: unknown): Promise<string | undefined>;
   simulator(action: string, id?: string): Promise<any>;

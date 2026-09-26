@@ -7,6 +7,7 @@
  * Masada ajanlar sirayla konusur; her biri kendinden oncekilerin soylediklerini
  * gorur ve kisaca katilir ya da itiraz eder. Boylece fikir alisverisi olusur.
  */
+import type { ActiveIntegration } from './integrations';
 import { randomUUID } from 'node:crypto';
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -140,6 +141,8 @@ export interface ChatRequest {
   text: string;
   profiles: AgentProfile[];
   providers: ProviderConfig[];
+  /** Bagli servisler; sohbette de ajanlar bunlara bakabilir. */
+  integrations?: ActiveIntegration[];
   signal?: AbortSignal;
   emit: (event: KonseyEvent) => void;
   /** Kullanici mesaji onceden kaydedilip yayinlandiysa tekrar eklenmez. */
@@ -234,7 +237,7 @@ export async function sendChat(req: ChatRequest): Promise<void> {
           req.emit({ type: 'chat:delta', id, thread: req.thread, text: item.tone === 'say' ? item.text : `_${item.text}…_` });
         }
       },
-    }, { providers: req.providers, profiles: req.profiles });
+    }, { providers: req.providers, profiles: req.profiles, integrations: req.integrations });
 
     // Hic calismadan donen (bulunamadi, pay dolu) cagrilar kullanima sayilmaz.
     if (result.ok || result.usage || result.durationMs > 0) {

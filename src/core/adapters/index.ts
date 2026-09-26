@@ -3,6 +3,7 @@ import { runCodex } from './codex';
 import { runAntigravity } from './antigravity';
 import { runProviderAgent, runProviderText } from '../providers/agent';
 import { cliSlug, presetFor, runCliAgent } from '../clis';
+import { integrationNote, type ActiveIntegration } from '../integrations';
 import { L } from '../../shared/i18n';
 import { getSecret } from '../secrets';
 import { failure } from './base';
@@ -20,6 +21,8 @@ export interface RunContext {
   providers?: ProviderConfig[];
   /** Ajan profilleri; cli:* ajanlarinin calistirma tanimi buradadir. */
   profiles?: AgentProfile[];
+  /** Kullanicinin bagladigi servisler; Claude ve Codex'e MCP olarak verilir. */
+  integrations?: ActiveIntegration[];
 }
 
 export async function runAgent(
@@ -62,9 +65,12 @@ export async function runAgent(
 
   switch (req.agent) {
     case 'claude':
-      return runClaude(req);
-    case 'codex':
-      return runCodex(req);
+    case 'codex': {
+      const integrations = ctx.integrations ?? [];
+      const note = integrationNote(integrations, req.agent);
+      const withNote = note ? { ...req, prompt: `${req.prompt}\n\n${note}` } : req;
+      return req.agent === 'claude' ? runClaude(withNote, integrations) : runCodex(withNote, integrations);
+    }
     case 'antigravity':
       // Antigravity'de bir modelin kotasi doldugunda ayni uygulamanin daha
       // ucuz modeline gec; ancak hepsi tukendiyse ajan seviyesinde fallback yapilsin.

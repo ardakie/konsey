@@ -9,6 +9,10 @@ import { classifyFailure } from './failures';
 import { findClaude } from '../discovery';
 import { claudeWindowsFromEvent } from '../usage';
 import { L } from '../../shared/i18n';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import * as path from 'node:path';
+import { claudeMcpConfig, serverName, type ActiveIntegration } from '../integrations';
 import type { AgentRunRequest, AgentRunResult, UsageWindow } from '../../shared/types';
 
 /** stream-json satirlarindan gorunur metni ve sonuc ozetini ayiklar. */
@@ -59,7 +63,7 @@ export function parseStreamJson(stdout: string): {
   return { text: assistantText, resultText, usage, limits };
 }
 
-export async function runClaude(req: AgentRunRequest): Promise<AgentRunResult> {
+export async function runClaude(req: AgentRunRequest, integrations: ActiveIntegration[] = []): Promise<AgentRunResult> {
   const bin = await findClaude();
   if (!bin) return failure('claude', L('claude CLI bulunamadı.', 'claude CLI was not found.'));
 
@@ -70,7 +74,10 @@ export async function runClaude(req: AgentRunRequest): Promise<AgentRunResult> {
     '--verbose',
     // Yazma izni: gorev yurutmede duzenlemeler otomatik kabul edilir,
     // analiz/plan turlarinda ajan hicbir sey degistiremez.
-    '--permission-mode', req.allowWrite ? 'acceptEdits' : 'plan',
+    // Bagli servis varsa okuma turlari "dontAsk" ile calisir: plan kipi MCP
+    // araclarini da engeller; dontAsk ise izin isteyen her seyi (dosya yazma,
+    // komut) reddeder, yalnizca asagida acikca izin verilen servis araclari calisir.
+    '--permission-mode', req.allowWrite ? 'acceptEdits' : integrations.length ? 'dontAsk' : 'plan',
     '--add-dir', req.cwd,
   ];
 
@@ -80,12 +87,24 @@ export async function runClaude(req: AgentRunRequest): Promise<AgentRunResult> {
   // Sohbet turlari hizli olmali: kullanicinin MCP sunuculari ve beceri listesi yuklenmez.
   if (req.lean) args.push('--strict-mcp-config', '--disable-slash-commands');
 
+  // Bagli servisler: gecici MCP ayar dosyasi (yalnizca kullanici okuyabilir)
+  // ve yalnizca bu sunucularin araclarina izin.
+  let mcpDir: string | null = null;
+  if (integrations.length) {
+    mcpDir = await mkdtemp(path.join(tmpdir(), 'konsey-mcp-'));
+    const file = path.join(mcpDir, 'mcp.json');
+    await writeFile(file, JSON.stringify(claudeMcpConfig(integrations)), { mode: 0o600 });
+    args.push('--mcp-config', file, '--allowedTools', integrations.map((i) => `mcp__${serverName(i.id)}`).join(','));
+  }
+
   const res = await runProcess(bin, args, {
     cwd: req.cwd,
     stdin: req.prompt,
     timeoutMs: req.timeoutMs,
     signal: req.signal,
     onChunk: req.onChunk,
+  }).finally(() => {
+    if (mcpDir) void rm(mcpDir, { recursive: true, force: true }).catch(() => {});
   });
 
   const { text, resultText, usage, limits } = parseStreamJson(res.stdout);

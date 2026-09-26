@@ -8,6 +8,7 @@ import { refreshAgents, refreshQuotas, saveConfig, toggleAgent } from './actions
 import { h, icon, morph, toast, tokens, until } from './dom';
 import { agents, avatar, invalidate, readiness, register, state, type AgentView } from './state';
 import { connectPanel, removeCliAgent } from './connect';
+import { integrationsTab } from './integrations';
 import { L } from '../../src/shared/i18n';
 
 const $ = (id: string) => document.getElementById(id)!;
@@ -478,13 +479,14 @@ export function renderSettings(): void {
   const next = h('div');
   if (state.settingsTab === 'agents') agentsTab(next);
   else if (state.settingsTab === 'providers') providersTab(next);
+  else if (state.settingsTab === 'integrations') integrationsTab(next);
   else generalTab(next);
   // Sekme degisince dugumler degissin; ayni sekmede yerinde guncellenir (kaydirici surukleme bozulmaz).
   for (const child of Array.from(next.children)) child.setAttribute('data-key', `${state.settingsTab}-${child.getAttribute('data-key') ?? ''}`);
   morph(body, Array.from(next.childNodes));
 }
 
-export function openSettings(tab?: 'agents' | 'providers' | 'general'): void {
+export function openSettings(tab?: 'agents' | 'providers' | 'integrations' | 'general'): void {
   if (tab) state.settingsTab = tab;
   if (!dialog().open) dialog().showModal();
   invalidate('settings');

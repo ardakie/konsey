@@ -12,6 +12,7 @@ import { runProcess, failure } from './base';
 import { classifyFailure } from './failures';
 import { findCodex } from '../discovery';
 import { L } from '../../shared/i18n';
+import { codexMcpArgs, type ActiveIntegration } from '../integrations';
 import type { AgentRunRequest, AgentRunResult } from '../../shared/types';
 
 /** JSONL olaylarindan ajanin urettigi metni toplar (son mesaj dosyasi yoksa yedek). */
@@ -55,18 +56,18 @@ function modelUnavailable(raw: string): boolean {
   return /model[^\n]{0,80}(not (?:found|supported|available|exist)|does not exist|unsupported|unknown|invalid)|(?:unknown|unsupported|invalid) model/i.test(raw);
 }
 
-export async function runCodex(req: AgentRunRequest): Promise<AgentRunResult> {
+export async function runCodex(req: AgentRunRequest, integrations: ActiveIntegration[] = []): Promise<AgentRunResult> {
   const bin = await findCodex();
   if (!bin) return failure('codex', L('codex CLI bulunamadı.', 'codex CLI was not found.'));
-  const first = await runCodexOnce(req, bin, req.model);
+  const first = await runCodexOnce(req, bin, req.model, integrations);
   if (!first.ok && req.model && first.failureKind === 'other' && modelUnavailable(first.raw)) {
     req.onChunk?.(L(`\n[Konsey] ${req.model} bu hesapta yok; Codex'in varsayılan modeli kullanılıyor.\n`, `\n[Konsey] ${req.model} is not available on this account; using Codex's default model.\n`));
-    return runCodexOnce(req, bin, undefined);
+    return runCodexOnce(req, bin, undefined, integrations);
   }
   return first;
 }
 
-async function runCodexOnce(req: AgentRunRequest, bin: string, model: string | undefined): Promise<AgentRunResult> {
+async function runCodexOnce(req: AgentRunRequest, bin: string, model: string | undefined, integrations: ActiveIntegration[]): Promise<AgentRunResult> {
   const tmp = await mkdtemp(path.join(tmpdir(), 'konsey-codex-'));
   const lastMessageFile = path.join(tmp, 'last.txt');
 
@@ -86,6 +87,9 @@ async function runCodexOnce(req: AgentRunRequest, bin: string, model: string | u
   if (req.effort) args.push('-c', `model_reasoning_effort="${req.effort}"`);
   // Sohbet turlari: kullanicinin MCP sunuculari baslatilmaz.
   if (req.lean) args.push('-c', 'mcp_servers={}');
+  // Bagli servisler: HTTP MCP sunuculari; token ortam degiskeniyle gider.
+  const mcp = codexMcpArgs(integrations);
+  args.push(...mcp.args);
   // Istem stdin'den verilir: Windows'ta komut satiri 32 bin karakterle sinirli.
   args.push('-');
 
@@ -94,6 +98,7 @@ async function runCodexOnce(req: AgentRunRequest, bin: string, model: string | u
     timeoutMs: req.timeoutMs,
     signal: req.signal,
     stdin: req.prompt,
+    env: { ...process.env, ...mcp.env },
     onChunk: req.onChunk,
   });
 

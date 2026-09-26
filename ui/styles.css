@@ -2854,3 +2854,23 @@ input[type='range']:active::-webkit-slider-thumb {
   color: var(--accent);
   font-weight: 600;
 }
+
+/* ------------------------------------------------------------------ entegrasyonlar */
+
+.int-mark {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--line);
+  color: var(--ink);
+  font-weight: 700;
+  font-size: 16px;
+}
+
+.integration:not(.is-off) .int-mark {
+  background: var(--accent-soft);
+  color: var(--accent);
+}

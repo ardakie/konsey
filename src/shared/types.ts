@@ -345,6 +345,18 @@ export interface AgentAvailability {
   retryAt?: number;
 }
 
+/** Ayarlardaki bir entegrasyon (GitHub, Sentry...). Token burada TUTULMAZ. */
+export interface IntegrationConfig {
+  /** Hazir servis kimligi (github, sentry...) ya da custom-<ad>. */
+  id: string;
+  enabled: boolean;
+  /** Destekleyen servislerde salt okunur baglanti (varsayilan acik). */
+  readOnly?: boolean;
+  /** Ozel MCP sunucusu: gorunen ad ve adres. */
+  label?: string;
+  url?: string;
+}
+
 /** Ek CLI ajaninin nasil calistirilacagi. */
 export interface CliAgentConfig {
   /** Hazir sablon kimligi (gemini, cursor, copilot...). Yoksa ozel CLI. */

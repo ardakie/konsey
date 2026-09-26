@@ -197,6 +197,14 @@ export function createMockApi(): any {
     relaunch: async () => location.reload(),
     checkUpdate: async () => ({ current: '1.0.0', latest: params.get('update') ? 'v1.1.0' : 'v1.0.0', available: Boolean(params.get('update')), url: '' }),
     openDownloads: async () => true,
+    integrations: async () => [
+      { id: 'github', label: 'GitHub', blurb: 'Repositories, issues, pull requests and Actions.', tokenUrl: 'https://github.com/settings/tokens', tokenHint: 'github_pat_…', supportsReadOnly: true, readOnly: true, enabled: true, hasToken: true, engines: ['claude', 'codex'], custom: false },
+      { id: 'supabase', label: 'Supabase', blurb: 'Database tables, SQL, logs and projects.', tokenUrl: 'https://supabase.com/dashboard/account/tokens', tokenHint: 'sbp_…', supportsReadOnly: true, readOnly: true, enabled: false, hasToken: false, engines: ['claude', 'codex'], custom: false },
+      { id: 'sentry', label: 'Sentry', blurb: 'Errors, events and performance issues.', tokenUrl: 'https://sentry.io/settings/account/api/auth-tokens/', tokenHint: 'sntryu_…', supportsReadOnly: false, readOnly: false, enabled: false, hasToken: false, engines: ['claude'], custom: false },
+    ],
+    saveIntegration: async () => ({ ok: true }),
+    removeIntegration: async () => true,
+    testIntegration: async () => ({ ok: true, detail: '@octocat' }),
     browser: async () => undefined,
     simulator: async () => [],
     availability: async () => [

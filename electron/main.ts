@@ -25,6 +25,7 @@ import { L } from '../src/shared/i18n';
 import type { AgentId, KonseyEvent, ProviderConfig, RunMode } from '../src/shared/types';
 import { registerPreview } from './preview';
 import { registerUpdates } from './updates';
+import { INTEGRATIONS, integrationDef, resolveIntegrations, secretAccount } from '../src/core/integrations';
 import { runSmoke, SMOKE } from './smoke';
 
 let mainWindow: BrowserWindow | null = null;
@@ -320,6 +321,81 @@ ipcMain.handle('konsey:relaunch', async () => {
   app.exit(0);
 });
 
+// ---------------------------------------------------------------- IPC: entegrasyonlar
+
+/** Servis listesi, bagli olup olmadiklari (token degeri arayuze hic gitmez). */
+ipcMain.handle('konsey:integrations:list', async () => {
+  const config = await loadConfig();
+  const known = await Promise.all(INTEGRATIONS.map(async (def) => {
+    const cfg = config.integrations.find((i) => i.id === def.id);
+    return {
+      id: def.id,
+      label: def.label,
+      blurb: def.blurb(),
+      tokenUrl: def.tokenUrl,
+      tokenHint: def.tokenHint,
+      supportsReadOnly: def.readOnly,
+      readOnly: def.readOnly && cfg?.readOnly !== false,
+      enabled: Boolean(cfg?.enabled),
+      hasToken: await hasSecret(secretAccount(def.id)),
+      engines: def.server('', true).type === 'http' ? ['claude', 'codex'] : ['claude'],
+      custom: false,
+    };
+  }));
+  const custom = await Promise.all(config.integrations.filter((i) => i.id.startsWith('custom-')).map(async (cfg) => ({
+    id: cfg.id,
+    label: cfg.label ?? cfg.id,
+    blurb: cfg.url ?? '',
+    tokenUrl: '',
+    tokenHint: '',
+    supportsReadOnly: false,
+    readOnly: false,
+    enabled: cfg.enabled,
+    hasToken: await hasSecret(secretAccount(cfg.id)),
+    engines: ['claude', 'codex'],
+    custom: true,
+  })));
+  return [...known, ...custom];
+});
+
+/** Baglar ya da gunceller. Token bos gelirse mevcut token korunur. */
+ipcMain.handle('konsey:integrations:save', async (_e, input: { id: string; token?: string; readOnly?: boolean; enabled?: boolean; label?: string; url?: string }) => {
+  const id = String(input.id);
+  const custom = id.startsWith('custom-');
+  if (!custom && !integrationDef(id)) return { ok: false, error: L('Bilinmeyen servis.', 'Unknown service.') };
+  if (custom && !/^https:\/\//.test(String(input.url ?? ''))) return { ok: false, error: L('Adres https:// ile başlamalı.', 'The address must start with https://.') };
+  if (input.token) await setSecret(secretAccount(id), input.token.trim());
+  if (!custom && !(await hasSecret(secretAccount(id)))) return { ok: false, error: L('Token gerekli.', 'A token is required.') };
+  const config = await loadConfig();
+  const current = config.integrations.find((i) => i.id === id);
+  const next = {
+    ...(current ?? { id, enabled: true }),
+    ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
+    ...(input.readOnly !== undefined ? { readOnly: input.readOnly } : {}),
+    ...(custom ? { label: input.label ?? current?.label ?? id, url: input.url ?? current?.url } : {}),
+  };
+  config.integrations = [...config.integrations.filter((i) => i.id !== id), next];
+  await saveConfig(config);
+  return { ok: true };
+});
+
+ipcMain.handle('konsey:integrations:remove', async (_e, id: string) => {
+  await deleteSecret(secretAccount(String(id)));
+  const config = await loadConfig();
+  config.integrations = config.integrations.filter((i) => i.id !== id);
+  await saveConfig(config);
+  return true;
+});
+
+/** Token'i servisin kendi API'sine hafif bir istekle dener. */
+ipcMain.handle('konsey:integrations:test', async (_e, id: string, token?: string) => {
+  const def = integrationDef(String(id));
+  if (!def) return { ok: true, detail: L('Özel sunucu: ajan ilk kullanımda bağlanır.', 'Custom server: agents connect on first use.') };
+  const value = token?.trim() || (await getSecret(secretAccount(def.id)));
+  if (!value) return { ok: false, detail: L('Token yok.', 'No token.') };
+  return def.test(value);
+});
+
 ipcMain.handle('konsey:quotas', async (_e, refresh?: boolean) => currentQuotas(Boolean(refresh)));
 
 ipcMain.handle('konsey:usage', async () => {
@@ -480,6 +556,7 @@ ipcMain.handle(
         text,
         profiles,
         providers,
+        integrations: await resolveIntegrations(config.integrations, getSecret),
         signal: controller.signal,
         emit: send,
       });
@@ -546,6 +623,7 @@ ipcMain.handle(
         prompt: args.prompt,
         profiles,
         providers,
+        integrations: await resolveIntegrations(config.integrations, getSecret),
         quotaProfiles: config.profiles,
         mode: args.mode ?? 'auto',
         autoApply: config.autoApply,

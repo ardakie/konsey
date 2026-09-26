@@ -45,7 +45,7 @@ export interface State {
   attachments: ImageAttachment[];
   openLanes: Set<string>;
   closedLanes: Set<string>;
-  settingsTab: 'agents' | 'providers' | 'general';
+  settingsTab: 'agents' | 'providers' | 'integrations' | 'general';
   /** Uyuyan (kota/pay dolu) ajanlar: ofis ve kenar cubugu icin. */
   sleeping: Map<string, { retryAt?: number; reason?: string }>;
 }
@@ -131,7 +131,7 @@ const BUILTIN_META: Record<string, { label: string; color: string; glyph: string
 /** Hazir CLI sablonlarinin marka renkleri (src/core/clis.ts ile ayni). */
 const CLI_COLORS: Record<string, string> = {
   gemini: '#4C8DF6', cursor: '#9AA0AA', copilot: '#8E6BE8', opencode: '#E8A33A',
-  qwen: '#6A5CF5', amp: '#F25C54', droid: '#E0773C', aider: '#3FA66B',
+  qwen: '#6A5CF5', amp: '#F25C54', droid: '#E0773C', aider: '#3FA66B', crush: '#C86BF5', goose: '#8A8F98',
 };
 
 const PROVIDER_COLORS = ['#E0A030', '#D6649A', '#2FA88F', '#8A63D2', '#E2735A', '#4F9BC8'];

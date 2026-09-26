@@ -29,6 +29,8 @@ export interface CliPreset {
   /** Calisma klasorunde dosya yazabilen turlar. */
   write: string[];
   modelFlag?: string;
+  /** Kipe gore eklenen ortam degiskenleri (or. Goose'un izin kipi). */
+  env?: Partial<Record<'read' | 'write', Record<string, string>>>;
   /** Kurulum komutu (kullaniciya kopyalanir ya da terminalde acilir). */
   install: string;
   /** Giris/hesap baglama komutu. */
@@ -144,6 +146,37 @@ export const CLI_PRESETS: CliPreset[] = [
     color: '#E0773C',
   },
   {
+    id: 'crush',
+    label: 'Crush',
+    bins: ['crush'],
+    promptVia: 'stdin',
+    base: ['run', '--quiet'],
+    read: [],
+    write: [],
+    modelFlag: '-m',
+    install: 'npm install -g @charmland/crush',
+    login: 'crush',
+    docs: 'https://github.com/charmbracelet/crush',
+    strengths: 'Istedigin model saglayicisiyla terminalde hizli kodlama.',
+    color: '#C86BF5',
+  },
+  {
+    id: 'goose',
+    label: 'Goose',
+    bins: ['goose'],
+    promptVia: 'arg',
+    base: ['run', '-t'],
+    read: [],
+    write: [],
+    // Okuma turlarinda arac kullanmaz; yazma turlarinda riskli adimlari Goose'un kendi denetimi ayiklar.
+    env: { read: { GOOSE_MODE: 'chat' }, write: { GOOSE_MODE: 'smart_approve' } },
+    install: 'curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | bash',
+    login: 'goose configure',
+    docs: 'https://block.github.io/goose/',
+    strengths: 'Genel amacli ajan: kod, betik ve arastirma isleri.',
+    color: '#5B5B5B',
+  },
+  {
     id: 'aider',
     label: 'Aider',
     bins: ['aider'],
@@ -182,6 +215,7 @@ export interface ResolvedCli {
   command: string;
   args: string[];
   stdin?: string;
+  env?: Record<string, string>;
 }
 
 function fill(args: string[], prompt: string, model?: string): { args: string[]; usedPrompt: boolean } {
@@ -223,8 +257,9 @@ export function buildCliCommand(cfg: CliAgentConfig, bin: string, prompt: string
     const args = [...preset.base];
     if (preset.modelFlag && (model || cfg.model)) args.push(preset.modelFlag, (model || cfg.model)!);
     args.push(...preset[access]);
-    if (preset.promptVia === 'arg') return { command: bin, args: [...args, prompt] };
-    return { command: bin, args, stdin: prompt };
+    const env = preset.env?.[access];
+    if (preset.promptVia === 'arg') return { command: bin, args: [...args, prompt], ...(env ? { env } : {}) };
+    return { command: bin, args, stdin: prompt, ...(env ? { env } : {}) };
   }
   const { args, usedPrompt } = fill(splitArgs(cfg.args ?? ''), prompt, model || cfg.model);
   return usedPrompt ? { command: bin, args } : { command: bin, args, stdin: prompt };
@@ -251,7 +286,7 @@ export async function runCliAgent(req: AgentRunRequest, profile: AgentProfile | 
     timeoutMs: req.timeoutMs,
     signal: req.signal,
     stdin: cmd.stdin ?? '',
-    env: { ...process.env, NO_COLOR: '1', FORCE_COLOR: '0', CI: '1' },
+    env: { ...process.env, NO_COLOR: '1', FORCE_COLOR: '0', CI: '1', ...(cmd.env ?? {}) },
     onChunk: req.onChunk,
   });
 

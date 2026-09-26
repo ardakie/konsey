@@ -98,7 +98,8 @@
         "repo": "konsey",
         "releaseType": "release"
       }
-    ]
+    ],
+    "afterPack": "scripts/adhoc-sign.js"
   },
   "author": {
     "name": "Arda",

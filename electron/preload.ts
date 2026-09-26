@@ -20,6 +20,10 @@ const api = {
   openExternal: (url: string) => invoke('konsey:openExternal', url),
   relaunch: () => invoke('konsey:relaunch'),
   checkUpdate: () => invoke('konsey:update:check'),
+  integrations: () => invoke('konsey:integrations:list'),
+  saveIntegration: (input: unknown) => invoke('konsey:integrations:save', input),
+  removeIntegration: (id: string) => invoke('konsey:integrations:remove', id),
+  testIntegration: (id: string, token?: string) => invoke('konsey:integrations:test', id, token),
   openDownloads: () => invoke('konsey:update:open'),
 
   browser: (action: string, value?: unknown) => invoke('preview:browser', action, value),

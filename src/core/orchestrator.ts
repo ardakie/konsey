@@ -9,6 +9,7 @@
  *   5. MERGE     — dallar tek entegrasyon dalinda birlestirilir
  *   6. REVIEW    — calismaya katilmayan (ya da en uygun) bir ajan sonucu denetler
  */
+import type { ActiveIntegration } from './integrations';
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { readdir } from 'node:fs/promises';
@@ -82,6 +83,8 @@ export interface OrchestratorOptions {
   keepWorktrees?: boolean;
   /** Kullanicinin kendi API anahtariyla ekledigi saglayicilar. */
   providers?: ProviderConfig[];
+  /** Bagli servisler (GitHub, Sentry...); Claude ve Codex'e MCP olarak verilir. */
+  integrations?: ActiveIntegration[];
   /** Kullanicinin sectigi rota; 'auto' ya da bos ise Konsey secer. */
   mode?: RunMode;
   /** Basarili sonuc proje klasorune otomatik uygulansin mi. */
@@ -138,6 +141,7 @@ export class Orchestrator {
   readonly bus = new EventBus();
   private run: RunRecord | null = null;
   private providers: ProviderConfig[] = [];
+  private integrations: ActiveIntegration[] = [];
   /** Etkin butun ajanlarin profili; maliyet katmani aramalarinda kullanilir. */
   private profileIndex = new Map<AgentId, AgentProfile>();
   /** Kota/oturum nedeniyle bu calisma boyunca devre disi kalan ajanlar. */
@@ -263,7 +267,7 @@ export class Orchestrator {
           this.bus.emit({ type: 'activity', runId, agent, text: item.text, tone: item.tone, at: Date.now(), phase: this.run?.phase });
         }
       },
-    }, { providers: this.providers, profiles: [...this.profileIndex.values()] });
+    }, { providers: this.providers, profiles: [...this.profileIndex.values()], integrations: this.integrations });
     if (this.run) {
       this.run.active = (this.run.active ?? []).filter((entry) => entry !== activeEntry);
       this.touch();
@@ -377,6 +381,7 @@ export class Orchestrator {
   async start(opts: OrchestratorOptions): Promise<RunRecord> {
     const profiles = opts.profiles ?? DEFAULT_PROFILES;
     this.providers = opts.providers ?? [];
+    this.integrations = opts.integrations ?? [];
     this.quotaProfiles = opts.quotaProfiles ?? profiles;
     this.downed.clear();
     this.attempts.clear();
