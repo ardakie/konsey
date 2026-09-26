@@ -6,136 +6,180 @@
       http-equiv="Content-Security-Policy"
       content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;"
     />
+    <meta name="color-scheme" content="light dark" />
     <title>Konsey</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <div class="titlebar"><span class="titlebar-label">Konsey</span><button id="preview-toggle" class="btn">Tarayıcı / iOS ▸</button></div>
+    <div class="app" id="app">
+      <!-- Kenar cubugu: macOS'un buzlu cam malzemesi uzerinde durur. -->
+      <aside class="sidebar" id="sidebar">
+        <div class="sb-drag drag"></div>
 
-    <div class="shell">
-      <aside class="sidebar">
-        <section class="panel">
-          <h2>Proje</h2>
-          <button id="pick-project" class="btn btn-block">Klasör seç…</button>
-          <div id="project-path" class="project-path muted">Henüz seçilmedi</div>
-          <div id="project-warning" class="warning" hidden></div>
-        </section>
+        <button id="new-task" class="sb-new" type="button">
+          <span data-icon="compose"></span><span data-en="New task">Yeni görev</span><kbd>⌘N</kbd>
+        </button>
 
-        <section class="panel panel-grow">
-          <h2>
-            Ajanlar
-            <button id="refresh-agents" class="btn-icon" title="Yenile">↻</button>
-          </h2>
-          <ul id="agent-list" class="agent-list"></ul>
-          <button id="open-settings" class="btn btn-block btn-quiet">Sağlayıcı ekle…</button>
-        </section>
-      </aside>
-
-      <main id="main" class="main">
-        <ol id="phases" class="phases"></ol>
-
-        <section id="office-section" class="office">
-          <div class="office-frame">
-            <canvas id="office"></canvas>
-          </div>
-          <div class="office-caption">
-            <span id="office-hint">Ajanlar iş aldıkça masalarına geçer.</span>
-          </div>
-        </section>
-
-        <div
-          id="office-splitter"
-          class="office-splitter"
-          role="separator"
-          aria-label="Piksel ofis yüksekliğini ayarla"
-          aria-orientation="horizontal"
-          aria-valuemin="180"
-          tabindex="0"
-        ></div>
-
-        <div class="workspace">
-          <section class="tasks">
-            <h2>Görevler</h2>
-            <div id="task-board" class="task-board">
-              <p class="empty">Bir istek yazdığında plan burada belirir.</p>
-            </div>
-
-            <div id="review-card" class="review-card" hidden></div>
-          </section>
-
-          <section class="lanes">
-            <h2>Canlı akış</h2>
-            <div id="lane-container" class="lane-container">
-              <p class="empty">Ajanlar çalışmaya başlayınca çıktıları burada akar.</p>
-            </div>
-          </section>
+        <div class="sb-project-wrap">
+          <button id="project-switcher" class="sb-project" type="button" aria-haspopup="menu">
+            <span class="sb-project-icon" data-icon="folder"></span>
+            <span class="sb-project-text">
+              <span id="project-name" class="sb-project-name" data-en="Pick a project">Proje seç</span>
+              <span id="project-path" class="sb-project-path" data-en="No folder selected">Klasör seçilmedi</span>
+            </span>
+            <span data-icon="chevrons"></span>
+          </button>
+          <div id="project-menu" class="menu" role="menu" hidden></div>
         </div>
 
-        <form id="composer" class="composer">
-          <div id="attachments" class="attachments" aria-label="Ekli görseller" hidden></div>
-          <textarea
-            id="prompt"
-            rows="3"
-            placeholder="Ne yapılmasını istiyorsun? Örn: kullanıcı girişi ekle, testlerini yaz ve README'yi güncelle."
-          ></textarea>
-          <div class="composer-actions">
-            <button type="button" id="attach-images" class="btn" title="Görsel ekle">＋ Görsel</button>
-            <span id="status-line" class="muted"></span>
-            <button type="button" id="cancel-run" class="btn btn-danger" hidden>Durdur</button>
-            <button type="submit" id="start-run" class="btn btn-primary">Başlat</button>
+        <nav class="sb-section sb-runs" aria-label="Görevler" data-en-aria-label="Tasks">
+          <div class="eyebrow" data-en="Tasks">Görevler</div>
+          <ul id="run-list" class="run-list"></ul>
+        </nav>
+
+        <section class="sb-section sb-agents" aria-label="Ajanlar" data-en-aria-label="Agents">
+          <div class="eyebrow">
+            <span data-en="Agents">Ajanlar</span>
+            <button id="refresh-agents" class="icon-btn xs" type="button" title="Durumu yenile" data-en-title="Refresh status"><span data-icon="refresh"></span></button>
           </div>
-        </form>
-      </main>
-      <aside id="preview-panel" hidden>
-        <div class="preview-tabs"><button id="browser-tab" class="btn">Web tarayıcı</button><button id="sim-tab" class="btn">iOS Simulator</button><button id="preview-hide" class="btn" title="Sağ paneli gizle">Gizle ▸</button></div>
-        <section id="browser-panel">
-          <form id="browser-address"><button type="button" id="browser-back" class="btn">←</button><button type="button" id="browser-forward" class="btn">→</button><button type="button" id="browser-reload" class="btn">↻</button><input id="browser-url" aria-label="Web adresi" placeholder="http://localhost:3000"><button class="btn">Git</button></form>
-          <div id="browser-surface"><p class="muted">Projenin önizleme adresini veya bir web adresini aç.</p></div>
+          <ul id="agent-list" class="agent-list"></ul>
         </section>
-        <section id="sim-panel" hidden>
-          <p>Gerçek Apple iOS Simulator</p>
-          <select id="sim-devices" aria-label="iOS cihazı"></select>
-          <button id="sim-open" class="btn">Cihazı başlat / aç</button>
-          <p class="muted small">Ekran burada yenilenir. Dokunma ve klavye için Simulator penceresini kullan.</p>
-          <img id="sim-screen" alt="iOS Simulator ekranı" hidden>
-        </section>
-        <p id="preview-status" role="status" class="small muted"></p>
+
+        <footer class="sb-footer">
+          <button id="update-pill" class="sb-link update-pill" type="button" hidden><span data-icon="sparkles"></span><span id="update-text"></span></button>
+          <button id="open-guide" class="sb-link" type="button"><span data-icon="sparkles"></span><span data-en="How it works">Nasıl çalışır?</span></button>
+          <button id="open-settings" class="sb-link" type="button"><span data-icon="settings"></span><span data-en="Settings">Ayarlar</span><kbd data-mod>⌘,</kbd></button>
+        </footer>
       </aside>
+
+      <div class="stage">
+        <div class="aurora" aria-hidden="true">
+          <i class="orb orb-a"></i><i class="orb orb-b"></i><i class="glow glow-a"></i><i class="glow glow-b"></i>
+        </div>
+
+        <main class="main" id="main">
+          <header class="topbar drag">
+            <div class="crumb">
+              <span id="thread-title" class="crumb-title" data-en="New task">Yeni görev</span>
+              <span id="thread-meta" class="crumb-meta"></span>
+            </div>
+            <div class="top-actions no-drag">
+              <button id="office-toggle" class="chip-btn" type="button" title="Piksel ofisi aç/kapat (⌘O)" data-en-title="Toggle pixel office (⌘O)" aria-pressed="true"><span data-icon="pixel"></span><span data-en="Office">Ofis</span></button>
+              <button id="chat-toggle" class="icon-btn" type="button" title="Sohbet paneli (⌘J)" data-en-title="Chat panel (⌘J)"><span data-icon="panel"></span></button>
+            </div>
+          </header>
+
+          <section id="office-view" class="office-strip">
+            <div class="office-frame"><canvas id="office"></canvas></div>
+          </section>
+
+          <section id="flow-view" class="view flow-view">
+            <div id="flow-scroll" class="flow-scroll">
+              <div id="flow" class="flow"></div>
+            </div>
+          </section>
+
+          <form id="composer" class="composer glass" autocomplete="off">
+            <div id="attachments" class="attachments" aria-label="Ekli görseller" data-en-aria-label="Attached images" hidden></div>
+            <textarea id="prompt" rows="1" placeholder="Konsey'e bir iş ver… (Enter gönderir, Shift+Enter satır)" data-en-placeholder="Give Konsey a task… (Enter sends, Shift+Enter for a new line)"></textarea>
+            <div class="composer-bar">
+              <button type="button" id="attach-images" class="icon-btn" title="Görsel ekle" data-en-title="Attach image"><span data-icon="image"></span></button>
+              <div class="picker-wrap">
+                <button type="button" id="mode-button" class="chip-btn" aria-haspopup="menu">
+                  <span data-icon="route"></span><span id="mode-label" data-en="Automatic">Otomatik</span><span data-icon="chevron-down"></span>
+                </button>
+                <div id="mode-menu" class="menu menu-up" role="menu" hidden></div>
+              </div>
+              <div id="composer-agents" class="composer-agents" aria-label="Bu işe katılacak ajanlar" data-en-aria-label="Agents joining this task"></div>
+              <span id="status-line" class="status-line"></span>
+              <button type="button" id="cancel-run" class="stop-btn" title="Durdur" data-en-title="Stop" hidden><span data-icon="stop"></span></button>
+              <button type="submit" id="start-run" class="send-btn" title="Gönder" data-en-title="Send"><span data-icon="arrow-up"></span></button>
+            </div>
+          </form>
+        </main>
+
+        <aside id="chat-panel" class="chat glass">
+          <header class="chat-head drag">
+            <div class="seg seg-sm no-drag" role="tablist">
+              <button id="side-chat" class="seg-btn is-on" type="button" data-en="Chat">Sohbet</button>
+              <button id="side-preview" class="seg-btn" type="button" data-en="Preview">Önizleme</button>
+            </div>
+            <button id="chat-clear" class="icon-btn xs no-drag" type="button" title="Bu sohbeti temizle" data-en-title="Clear this chat"><span data-icon="trash"></span></button>
+          </header>
+
+          <section id="chat-pane" class="chat-pane">
+            <div id="chat-tabs" class="chat-tabs" role="tablist" aria-label="Kiminle konuşuyorsun" data-en-aria-label="Who you're talking to"></div>
+            <div class="chat-intro" id="chat-intro"></div>
+            <div id="chat-scroll" class="chat-scroll">
+              <div id="chat-messages" class="chat-messages"></div>
+            </div>
+            <form id="chat-form" class="chat-composer" autocomplete="off">
+              <textarea id="chat-input" rows="1" placeholder="Masaya yaz…" data-en-placeholder="Write to the table…"></textarea>
+              <button id="chat-stop" type="button" class="stop-btn sm" title="Durdur" data-en-title="Stop" hidden><span data-icon="stop"></span></button>
+              <button id="chat-send" type="submit" class="send-btn sm" title="Gönder" data-en-title="Send"><span data-icon="arrow-up"></span></button>
+            </form>
+          </section>
+
+          <section id="preview-panel" class="preview-pane" hidden>
+            <div class="seg seg-sm">
+              <button id="browser-tab" class="seg-btn is-on" type="button">Web</button>
+              <button id="sim-tab" class="seg-btn" type="button">iOS Simulator</button>
+            </div>
+            <section id="browser-panel" class="browser-panel">
+              <form id="browser-address" class="browser-address">
+                <button type="button" id="browser-back" class="icon-btn xs" title="Geri" data-en-title="Back"><span data-icon="chevron-left"></span></button>
+                <button type="button" id="browser-forward" class="icon-btn xs" title="İleri" data-en-title="Forward"><span data-icon="chevron-right"></span></button>
+                <button type="button" id="browser-reload" class="icon-btn xs" title="Yenile" data-en-title="Reload"><span data-icon="refresh"></span></button>
+                <input id="browser-url" aria-label="Web adresi" data-en-aria-label="Web address" placeholder="localhost:3000" />
+              </form>
+              <div id="browser-surface" class="browser-surface"><p class="muted" data-en="Open the project's preview address or a web address.">Projenin önizleme adresini ya da bir web adresini aç.</p></div>
+            </section>
+            <section id="sim-panel" class="sim-panel" hidden>
+              <select id="sim-devices" aria-label="iOS cihazı" data-en-aria-label="iOS device"></select>
+              <button id="sim-open" class="btn" type="button" data-en="Start device">Cihazı başlat</button>
+              <img id="sim-screen" alt="iOS Simulator ekranı" data-en-alt="iOS Simulator screen" hidden />
+            </section>
+            <p id="preview-status" role="status" class="small muted"></p>
+          </section>
+        </aside>
+      </div>
     </div>
 
-    <dialog id="settings" class="settings">
-      <form method="dialog" class="settings-inner">
-        <h2>Sağlayıcılar</h2>
-        <p class="muted small">
-          OpenAI uyumlu uçlar (kendi API anahtarların). Anahtarlar macOS Keychain'de saklanır,
-          ayar dosyasına yazılmaz.
-        </p>
-
-        <div id="provider-list" class="provider-list"></div>
-
-        <fieldset class="provider-form">
-          <legend>Yeni sağlayıcı</legend>
-          <label>Ad <input id="p-label" placeholder="Orfi" /></label>
-          <label>Kısa kimlik <input id="p-slug" placeholder="orfi" /></label>
-          <label>Base URL <input id="p-url" placeholder="https://host:9443/v1" /></label>
-          <label>Model <input id="p-model" placeholder="deepseek/deepseek-v4-flash" /></label>
-          <label>API anahtarı <input id="p-key" type="password" placeholder="sk-…" /></label>
-          <label>Güçlü yanları <input id="p-strengths" placeholder="Hızlı, geniş bağlam" /></label>
-          <label class="checkbox">
-            <input id="p-write" type="checkbox" checked /> Kod da yazabilsin
-          </label>
-          <div class="provider-form-actions">
-            <button type="button" id="p-test" class="btn">Bağlantıyı test et</button>
-            <button type="button" id="p-add" class="btn btn-primary">Ekle</button>
+    <dialog id="settings" class="sheet">
+      <div class="sheet-inner">
+        <header class="sheet-head">
+          <div>
+            <div class="eyebrow">Konsey</div>
+            <h2 class="display-sm" data-en="Settings">Ayarlar</h2>
           </div>
-          <div id="p-result" class="small"></div>
-        </fieldset>
-
-        <div class="settings-actions">
-          <button value="close" class="btn">Kapat</button>
-        </div>
-      </form>
+          <div class="seg seg-sm" role="tablist">
+            <button class="seg-btn is-on" data-settings-tab="agents" type="button" data-en="Agents & limits">Ajanlar ve limitler</button>
+            <button class="seg-btn" data-settings-tab="providers" type="button" data-en="API providers">API sağlayıcıları</button>
+            <button class="seg-btn" data-settings-tab="general" type="button" data-en="General">Genel</button>
+          </div>
+          <button id="settings-close" class="icon-btn" type="button" title="Kapat" data-en-title="Close"><span data-icon="x"></span></button>
+        </header>
+        <div id="settings-body" class="sheet-body"></div>
+      </div>
     </dialog>
+
+    <dialog id="guide" class="sheet guide">
+      <div class="sheet-inner">
+        <header class="sheet-head">
+          <div>
+            <div class="eyebrow">Konsey</div>
+            <h2 class="display-sm" data-en="How it works">Nasıl çalışır?</h2>
+          </div>
+          <button id="guide-close" class="icon-btn" type="button" title="Kapat" data-en-title="Close"><span data-icon="x"></span></button>
+        </header>
+        <div id="guide-body" class="sheet-body"></div>
+        <footer class="guide-foot">
+          <button id="guide-start" class="btn ink" type="button" data-en="Get started">Başla</button>
+        </footer>
+      </div>
+    </dialog>
+
+    <div id="toast" class="toast" role="status" hidden></div>
 
     <script src="renderer.js"></script>
   </body>

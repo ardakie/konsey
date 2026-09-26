@@ -24,6 +24,18 @@
         "dist/ui"
       ],
       "port": 8124
+    },
+    {
+      "name": "konsey-site",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8125",
+        "--directory",
+        "site"
+      ],
+      "port": 8125
     }
   ]
 }

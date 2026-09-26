@@ -12,37 +12,40 @@ import { open, readdir, stat } from 'node:fs/promises';
 import { promisify } from 'node:util';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import type { AgentAvailability } from '../shared/types';
+import type { AgentAvailability, AgentProfile } from '../shared/types';
+import { findCliBinary } from './clis';
+import { L, locale } from '../shared/i18n';
+import { ensurePath, firstExisting, IS_MAC, IS_WIN, which } from './env';
 
 const execFileAsync = promisify(execFile);
 
 const HOME = os.homedir();
 
-/** Codex CLI, ChatGPT.app paketinin icine gomulu geliyor. */
-const CODEX_CANDIDATES = [
-  '/Applications/ChatGPT.app/Contents/Resources/codex',
-  path.join(HOME, '.codex/bin/codex'),
-  '/opt/homebrew/bin/codex',
-  '/usr/local/bin/codex',
-];
+/** Codex CLI; Mac'te ChatGPT/Codex uygulamasinin icinde de gelir. */
+const CODEX_CANDIDATES = IS_WIN
+  ? [path.join(HOME, '.codex', 'bin', 'codex.exe')]
+  : [
+      '/Applications/Codex.app/Contents/Resources/codex',
+      '/Applications/ChatGPT.app/Contents/Resources/codex',
+      path.join(HOME, '.codex/bin/codex'),
+      '/opt/homebrew/bin/codex',
+      '/usr/local/bin/codex',
+    ];
 
-const CLAUDE_CANDIDATES = [
-  '/opt/homebrew/bin/claude',
-  '/usr/local/bin/claude',
-  path.join(HOME, '.claude/local/claude'),
-  path.join(HOME, '.local/bin/claude'),
-];
+const CLAUDE_CANDIDATES = IS_WIN
+  ? [path.join(HOME, '.local', 'bin', 'claude.exe'), path.join(HOME, '.claude', 'local', 'claude.exe')]
+  : [
+      path.join(HOME, '.local/bin/claude'),
+      '/opt/homebrew/bin/claude',
+      '/usr/local/bin/claude',
+      path.join(HOME, '.claude/local/claude'),
+    ];
 
 /** agentapi, language server'a "agentapi" alt komutuyla giden ince bir sh sarmalayici. */
 const AGENTAPI_CANDIDATES = [
-  path.join(HOME, '.gemini/antigravity-ide/bin/agentapi'),
   path.join(HOME, '.gemini/antigravity/bin/agentapi'),
+  path.join(HOME, '.gemini/antigravity-ide/bin/agentapi'),
 ];
-
-function firstExisting(candidates: string[]): string | null {
-  for (const c of candidates) if (existsSync(c)) return c;
-  return null;
-}
 
 interface ClaudeQuotaState {
   retryAt: number;
@@ -72,13 +75,13 @@ function parseClaudeQuotaLine(line: string, fileMtime: number): ClaudeQuotaState
     const retryAt = epochMs(limits?.resetsAt ?? entry.resetsAt);
     if (!retryAt) return null;
     const eventAt = epochMs(entry.timestamp) ?? fileMtime;
-    const reset = new Date(retryAt).toLocaleString('tr-TR', {
+    const reset = new Date(retryAt).toLocaleString(locale(), {
       day: '2-digit',
       month: '2-digit',
       hour: '2-digit',
       minute: '2-digit',
     });
-    return { retryAt, retryHint: `${reset} tarihinde yenilenir`, eventAt };
+    return { retryAt, retryHint: L(`${reset} tarihinde yenilenir`, `resets ${reset}`), eventAt };
   } catch {
     return null;
   }
@@ -148,11 +151,11 @@ function parseCodexLimitLine(line: string, fileMtime: number): CodexLimitObserva
     const retryAt = resetCandidates.length ? Math.max(...resetCandidates) : 0;
     const eventAt = epochMs(entry.timestamp) ?? fileMtime;
     const reset = retryAt
-      ? new Date(retryAt).toLocaleString('tr-TR', {
+      ? new Date(retryAt).toLocaleString(locale(), {
           day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
         })
-      : 'bilinmeyen zamanda';
-    return { exhausted, retryAt, retryHint: `${reset} tarihinde yenilenir`, eventAt };
+      : L('bilinmeyen zamanda', 'at an unknown time');
+    return { exhausted, retryAt, retryHint: L(`${reset} tarihinde yenilenir`, `resets ${reset}`), eventAt };
   } catch {
     return null;
   }
@@ -199,22 +202,14 @@ async function detectCodexQuota(now = Date.now()): Promise<ClaudeQuotaState | nu
   }
 }
 
-async function which(bin: string): Promise<string | null> {
-  try {
-    const { stdout } = await execFileAsync('/usr/bin/which', [bin]);
-    const p = stdout.trim();
-    return p.length > 0 && existsSync(p) ? p : null;
-  } catch {
-    return null;
-  }
-}
-
 export async function findClaude(): Promise<string | null> {
-  return firstExisting(CLAUDE_CANDIDATES) ?? (await which('claude'));
+  await ensurePath();
+  return (await which('claude')) ?? firstExisting(CLAUDE_CANDIDATES);
 }
 
 export async function findCodex(): Promise<string | null> {
-  return firstExisting(CODEX_CANDIDATES) ?? (await which('codex'));
+  await ensurePath();
+  return (await which('codex')) ?? firstExisting(CODEX_CANDIDATES);
 }
 
 export function findAgentApi(): string | null {
@@ -238,6 +233,20 @@ interface LsProcess {
   pid: number;
   csrfToken: string;
   workspaceId: string;
+  /** Sunucunun geldigi uygulama: 'app' (Antigravity, projeleri tutar) ya da 'ide'. */
+  kind: 'app' | 'ide';
+}
+
+/**
+ * Her sunucu kendi uygulamasinin agentapi sarmalayicisiyla konusur. Antigravity
+ * uygulamasinin sunucusu (Resources/bin/language_server) proje deposunu tutar;
+ * IDE pencerelerinin sunuculari (language_server_macos_*) tutmaz ve konusma
+ * acma istegini "projectsStore is nil" diye reddeder.
+ */
+function agentApiFor(kind: 'app' | 'ide'): string | null {
+  return firstExisting(kind === 'app'
+    ? [path.join(HOME, '.gemini/antigravity/bin/agentapi')]
+    : [path.join(HOME, '.gemini/antigravity-ide/bin/agentapi')]);
 }
 
 /** `ps` ciktisindan calisan language server'lari ve argumanlarini ayiklar. */
@@ -253,7 +262,9 @@ async function listLanguageServers(): Promise<LsProcess[]> {
 
   const out: LsProcess[] = [];
   for (const line of stdout.split('\n')) {
-    if (!line.includes('language_server_macos') || !line.includes('antigravity')) continue;
+    const isIde = line.includes('language_server_macos') && /antigravity/i.test(line);
+    const isApp = line.includes('/Antigravity.app/Contents/Resources/bin/language_server');
+    if (!isIde && !isApp) continue;
     // Argumanlari bosluga gore ayirmak yeterli: bizi ilgilendiren degerlerde bosluk yok.
     const parts = line.trim().split(/\s+/);
     const pid = Number(parts[0]);
@@ -265,10 +276,10 @@ async function listLanguageServers(): Promise<LsProcess[]> {
     };
 
     const csrfToken = argValue('--csrf_token');
-    const workspaceId = argValue('--workspace_id');
-    // --enable_lsp tasiyan surec, IDE'ye bagli asil ajan sunucusudur.
-    if (!csrfToken || !workspaceId) continue;
-    out.push({ pid, csrfToken, workspaceId });
+    // IDE'de klasor acik degilse --workspace_id olmaz; ajan sunucusu yine de calisir.
+    const workspaceId = argValue('--workspace_id') ?? '';
+    if (!csrfToken) continue;
+    out.push({ pid, csrfToken, workspaceId, kind: isApp ? 'app' : 'ide' });
   }
   return out;
 }
@@ -290,9 +301,13 @@ async function listeningPorts(pid: number): Promise<number[]> {
   }
 }
 
-/** file_Users_ardakie_Documents_Obsidian -> /Users/ardakie/Documents/Obsidian */
-function workspaceIdToPath(workspaceId: string): string {
-  const body = workspaceId.replace(/^file_/, '');
+/** file_Users_arda_Desktop_dating_20app -> /Users/arda/Desktop/dating app */
+export function workspaceIdToPath(workspaceId: string): string {
+  const body = workspaceId
+    .replace(/^file_/, '')
+    // Antigravity boslugu `_20` olarak kodluyor. Genel hex cozme kullanma:
+    // `_Desktop` gibi normal bir yol parcasi `_De` ile baslayabilir.
+    .replace(/_20/g, ' ');
   return '/' + body.split('_').join('/');
 }
 
@@ -333,37 +348,49 @@ async function probePort(
 export async function discoverAntigravity(
   preferWorkspace?: string,
 ): Promise<AntigravitySession | null> {
-  const agentApiPath = findAgentApi();
-  if (!agentApiPath) return null;
+  return (await discoverAntigravitySessions(preferWorkspace, 1))[0] ?? null;
+}
 
+/**
+ * Calisan tum Antigravity language server'lari. Her IDE penceresinin kendi
+ * sunucusu vardir; klasorsuz pencerenin sunucusu proje tutmadigi icin
+ * konusma acamayabilir, bu yuzden cagiran taraf siradakini deneyebilir.
+ */
+export async function discoverAntigravitySessions(
+  preferWorkspace?: string,
+  limit = Infinity,
+): Promise<AntigravitySession[]> {
   const servers = await listLanguageServers();
-  if (servers.length === 0) return null;
+  if (servers.length === 0) return [];
 
-  // Istenen klasore bagli sunucu varsa onu one al.
-  const ordered = [...servers].sort((a, b) => {
-    if (!preferWorkspace) return 0;
-    const want = path.resolve(preferWorkspace);
-    const aMatch = workspaceIdToPath(a.workspaceId) === want ? 0 : 1;
-    const bMatch = workspaceIdToPath(b.workspaceId) === want ? 0 : 1;
-    return aMatch - bMatch;
-  });
+  // Once projeleri tutan Antigravity uygulamasi; IDE'lerde istenen klasore bagli
+  // sunucu one, klasorsuz sunucular sona.
+  const want = preferWorkspace ? path.resolve(preferWorkspace) : null;
+  const rank = (srv: LsProcess) =>
+    srv.kind === 'app' ? 0 : want && workspaceIdToPath(srv.workspaceId) === want ? 1 : srv.workspaceId ? 2 : 3;
+  const ordered = [...servers].sort((a, b) => rank(a) - rank(b));
 
+  const out: AntigravitySession[] = [];
   for (const srv of ordered) {
+    if (out.length >= limit) break;
+    const agentApiPath = agentApiFor(srv.kind);
+    if (!agentApiPath) continue;
     const ports = await listeningPorts(srv.pid);
     for (const port of ports) {
       if (await probePort(agentApiPath, port, srv.csrfToken)) {
-        return {
+        out.push({
           lsAddress: `127.0.0.1:${port}`,
           csrfToken: srv.csrfToken,
           projectId: srv.workspaceId,
-          workspaceHint: workspaceIdToPath(srv.workspaceId),
+          workspaceHint: srv.workspaceId ? workspaceIdToPath(srv.workspaceId) : '',
           pid: srv.pid,
           agentApiPath,
-        };
+        });
+        break;
       }
     }
   }
-  return null;
+  return out;
 }
 
 /** Bir klasoru Antigravity IDE'de acar (yeni pencere). Worktree izolasyonu icin. */
@@ -381,24 +408,45 @@ export async function openInAntigravity(dir: string): Promise<boolean> {
   }
 }
 
-export async function checkAvailability(preferWorkspace?: string): Promise<AgentAvailability[]> {
-  const [claude, codex, claudeQuota, codexQuota] = await Promise.all([
+/** Ek CLI ajanlarinin durumu (Gemini CLI, Cursor Agent, ozel CLI...). */
+async function cliAvailability(profiles: AgentProfile[]): Promise<AgentAvailability[]> {
+  return Promise.all(profiles.filter((p) => p.agent.startsWith('cli:') && p.cli).map(async (p) => {
+    const bin = await findCliBinary(p.cli!);
+    return {
+      agent: p.agent,
+      available: !!bin,
+      detail: bin
+        ? L(`Bulundu: ${bin}`, `Found: ${bin}`)
+        : L(`${p.label} bulunamadı. Kurulu mu?`, `${p.label} was not found. Is it installed?`),
+      target: bin ?? undefined,
+    };
+  }));
+}
+
+export async function checkAvailability(preferWorkspace?: string, profiles: AgentProfile[] = []): Promise<AgentAvailability[]> {
+  await ensurePath();
+  const [claude, codex, claudeQuota, codexQuota, clis] = await Promise.all([
     findClaude(),
     findCodex(),
     detectClaudeQuota(),
     detectCodexQuota(),
+    cliAvailability(profiles),
   ]);
-  const ag = await discoverAntigravity(preferWorkspace);
+  // Antigravity'nin yerel ajan sunucusuna yalnizca macOS'ta baglanilabiliyor.
+  const ag = IS_MAC ? await discoverAntigravity(preferWorkspace) : null;
+  const agInstalled = IS_MAC
+    ? ['/Applications/Antigravity.app', '/Applications/Antigravity IDE.app'].find((p) => existsSync(p))
+    : undefined;
 
   return [
     {
       agent: 'claude',
       available: !!claude && !claudeQuota,
       detail: claudeQuota
-        ? `Token limiti doldu · ${claudeQuota.retryHint}`
+        ? L(`Token limiti doldu · ${claudeQuota.retryHint}`, `Token limit reached · ${claudeQuota.retryHint}`)
         : claude
-          ? `CLI bulundu: ${claude}`
-          : 'claude CLI bulunamadi. Claude Code kurulu mu?',
+          ? L(`CLI bulundu: ${claude}`, `CLI found: ${claude}`)
+          : L('Claude Code kurulu değil.', 'Claude Code is not installed.'),
       target: claude ?? undefined,
       failureKind: claudeQuota ? 'quota' : undefined,
       retryAt: claudeQuota?.retryAt,
@@ -408,10 +456,10 @@ export async function checkAvailability(preferWorkspace?: string): Promise<Agent
       agent: 'codex',
       available: !!codex && !codexQuota,
       detail: codexQuota
-        ? `Token limiti doldu · ${codexQuota.retryHint}`
+        ? L(`Token limiti doldu · ${codexQuota.retryHint}`, `Token limit reached · ${codexQuota.retryHint}`)
         : codex
-          ? `CLI bulundu: ${codex}`
-          : 'codex CLI bulunamadi. ChatGPT.app kurulu mu? (Resources/codex)',
+          ? L(`CLI bulundu: ${codex}`, `CLI found: ${codex}`)
+          : L('Codex CLI kurulu değil.', 'Codex CLI is not installed.'),
       target: codex ?? undefined,
       failureKind: codexQuota ? 'quota' : undefined,
       retryAt: codexQuota?.retryAt,
@@ -419,17 +467,19 @@ export async function checkAvailability(preferWorkspace?: string): Promise<Agent
     },
     {
       agent: 'antigravity',
-      available: !!ag,
-      detail: ag
-        ? preferWorkspace && path.resolve(ag.workspaceHint) === path.resolve(preferWorkspace)
-          ? `agentapi hazır · seçili proje bağlı: ${ag.workspaceHint}`
-          : preferWorkspace
-            ? `agentapi hazır · IDE'nin açık alanı: ${ag.workspaceHint}; çalışma başlayınca seçili proje açılır.`
-            : `agentapi hazır · IDE'nin açık alanı: ${ag.workspaceHint}`
-        : findAgentApi()
-          ? 'agentapi var ama calisan language server yok. Antigravity IDE acik olmali.'
-          : 'agentapi bulunamadi (~/.gemini/antigravity-ide/bin/agentapi).',
+      // Uygulama kapaliysa Konsey gorev aninda arka planda acar; kurulu olmasi yeter.
+      available: !!ag || (!!agInstalled && !!findAgentApi()),
+      detail: !IS_MAC
+        ? L('Antigravity şimdilik yalnızca macOS’ta destekleniyor.', 'Antigravity is currently supported on macOS only.')
+        : ag
+          ? ag.agentApiPath.includes('antigravity-ide')
+            ? L('IDE sunucusu açık · görevde Antigravity uygulaması da açılır', 'IDE server running · the Antigravity app opens during tasks')
+            : L('Antigravity hazır', 'Antigravity ready')
+          : agInstalled && findAgentApi()
+            ? L('Kapalı · gerektiğinde Konsey arka planda açar', 'Closed · Konsey opens it in the background when needed')
+            : L('Antigravity kurulu değil.', 'Antigravity is not installed.'),
       target: ag?.lsAddress,
     },
+    ...clis,
   ];
 }

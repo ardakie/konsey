@@ -4,6 +4,7 @@ import { promisify } from 'node:util';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { L } from '../src/shared/i18n';
 const exec = promisify(execFile);
 
 export function registerPreview(getWindow: () => BrowserWindow | null): void {
@@ -14,12 +15,12 @@ export function registerPreview(getWindow: () => BrowserWindow | null): void {
   };
   const validDevice = async (id: string) => {
     const device = (await devices()).find(d => d.udid === id);
-    if (!device) throw new Error('Cihaz bulunamadı.');
+    if (!device) throw new Error(L('Cihaz bulunamadı.', 'Device not found.'));
     return device;
   };
   ipcMain.handle('preview:browser', async (event, action: string, value?: any) => {
     const win = getWindow();
-    if (!win || event.sender !== win.webContents) throw new Error('Geçersiz pencere');
+    if (!win || event.sender !== win.webContents) throw new Error(L('Geçersiz pencere', 'Invalid window'));
     if (!view) {
       view = new WebContentsView({ webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, partition: 'persist:konsey-browser' } });
       view.setVisible(false);
@@ -37,7 +38,7 @@ export function registerPreview(getWindow: () => BrowserWindow | null): void {
     }
     if (action === 'go') {
       const url = new URL(value.includes('://') ? value : `http://${value}`);
-      if (!['http:', 'https:'].includes(url.protocol)) throw new Error('HTTP veya HTTPS adresi gir.');
+      if (!['http:', 'https:'].includes(url.protocol)) throw new Error(L('HTTP veya HTTPS adresi gir.', 'Enter an HTTP or HTTPS address.'));
       await view.webContents.loadURL(url.toString());
     }
     if (action === 'back' && view.webContents.canGoBack()) view.webContents.goBack();
@@ -46,7 +47,7 @@ export function registerPreview(getWindow: () => BrowserWindow | null): void {
     return view.webContents.getURL();
   });
   ipcMain.handle('preview:simulator', async (event, action: string, id?: string) => {
-    if (event.sender !== getWindow()?.webContents) throw new Error('Geçersiz pencere');
+    if (event.sender !== getWindow()?.webContents) throw new Error(L('Geçersiz pencere', 'Invalid window'));
     if (action === 'list') return devices();
     const device = await validDevice(id ?? '');
     if (action === 'boot') {

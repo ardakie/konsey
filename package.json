@@ -1,7 +1,7 @@
 {
   "name": "konsey",
-  "version": "0.1.0",
-  "description": "Claude, Codex ve Antigravity ajanlarini tek bir proje uzerinde koordine eden Mac uygulamasi",
+  "version": "1.0.0",
+  "description": "Konsey: Claude, Codex, Gemini CLI and other coding agents working together on one project.",
   "main": "dist/electron/main.js",
   "type": "commonjs",
   "scripts": {
@@ -9,18 +9,20 @@
     "build:ui": "esbuild ui/renderer.ts --bundle --outfile=dist/ui/renderer.js --platform=browser --format=iife --target=es2022",
     "copy:ui": "mkdir -p dist/ui && cp ui/index.html dist/ui/index.html && cp ui/styles.css dist/ui/styles.css && rm -rf dist/ui/assets && cp -R ui/pixel/assets dist/ui/assets",
     "build": "npm run build:main && npm run copy:ui && npm run build:ui",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc --noEmit --target ES2022 --module commonjs --moduleResolution node --lib ES2022,DOM ui/renderer.ts ui/devMock.ts ui/pixel/office.ts ui/pixel/pixelFont.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc --noEmit --target ES2022 --module commonjs --moduleResolution node --lib ES2022,DOM ui/renderer.ts ui/devMock.ts ui/preview.ts ui/app/*.ts ui/pixel/office.ts ui/pixel/pixelFont.ts",
     "test": "npm run build:main && node --test tests/*.test.js",
     "verify": "npm run typecheck && npm test && npm run build",
     "start": "npm run build && electron dist/electron/main.js",
     "cli": "npm run build:main && node dist/src/cli.js",
     "doctor": "npm run build:main && node dist/src/cli.js doctor",
-    "icon": "node scripts/make-icon.js",
+    "icon": "python3 scripts/make-icon.py",
     "prepackage": "node scripts/check-app-not-running.js",
-    "package": "npm run build && npm run icon && electron-builder --mac --arm64",
-    "prepackage:dir": "node scripts/check-app-not-running.js",
-    "package:dir": "npm run build && npm run icon && electron-builder --mac dir --arm64",
-    "ui": "npm run build && python3 -m http.server 8124 --directory dist/ui"
+    "package": "npm run build && electron-builder --mac --arm64",
+    "package:dir": "npm run build && electron-builder --mac dir --arm64",
+    "ui": "npm run build && python3 -m http.server 8124 --directory dist/ui",
+    "package:mac": "npm run build && electron-builder --mac --arm64 --x64 --publish never",
+    "package:win": "npm run build && electron-builder --win --x64 --publish never",
+    "release": "npm run build && electron-builder --publish always"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
@@ -38,32 +40,74 @@
     },
     "files": [
       "dist/**/*",
+      "!dist/**/*.map",
       "package.json"
     ],
     "mac": {
       "category": "public.app-category.developer-tools",
-      "icon": "build/icon.png",
+      "icon": "build/icon.icns",
       "target": [
         {
           "target": "dmg",
           "arch": [
-            "arm64"
+            "arm64",
+            "x64"
           ]
         },
         {
-          "target": "dir",
+          "target": "zip",
           "arch": [
-            "arm64"
+            "arm64",
+            "x64"
           ]
         }
       ],
       "identity": null,
+      "artifactName": "Konsey-mac-${arch}.${ext}",
       "extendInfo": {
         "LSMinimumSystemVersion": "11.0"
       }
     },
     "dmg": {
-      "title": "Konsey"
-    }
-  }
+      "title": "Konsey",
+      "artifactName": "Konsey-mac-${arch}.${ext}"
+    },
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "Konsey-windows-${arch}-setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "deleteAppDataOnUninstall": false,
+      "shortcutName": "Konsey",
+      "artifactName": "Konsey-windows-${arch}-setup.${ext}"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "ardakie",
+        "repo": "konsey",
+        "releaseType": "release"
+      }
+    ]
+  },
+  "author": {
+    "name": "Arda",
+    "url": "https://github.com/ardakie"
+  },
+  "homepage": "https://ardakie.github.io/konsey/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ardakie/konsey.git"
+  },
+  "license": "MIT"
 }

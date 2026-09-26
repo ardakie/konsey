@@ -1,5 +1,6 @@
 /** Ajanlara gonderilen istem sablonlari. Tek yerde tutuluyor ki ayarlamak kolay olsun. */
-import type { AgentId, AgentProfile, CostTier, Task } from '../shared/types';
+import type { AgentId, AgentProfile, CostTier, Task, ValidationOutcome } from '../shared/types';
+import { replyLanguage } from '../shared/i18n';
 
 export const DEFAULT_PROFILES: AgentProfile[] = [
   {
@@ -93,6 +94,7 @@ Kurallar:
 - Yeni bir raster gorsel/illustrasyon uretilmesi gerekiyorsa requiresVisual=true yap ve Codex'i
   oner; Codex bu durumda ChatGPT'nin gorsel uretim aracini kullanir. Mevcut SVG/CSS/canvas
   varliklarini kodla duzenlemek gorsel uretim sayilmaz.
+- "summary" ve gorevlerin "title"/"detail" alanlari kullaniciya gosterilir: ${replyLanguage()}
 
 ${COST_RULE}
 
@@ -138,6 +140,8 @@ ${list}
 Projeye bak ve hangi gorevleri USTLENMEK istedigini bildir. Durust ol: senin icin uygun
 olmayan gorevleri baskasina birak. Her gorev icin 0-100 arasi bir guven puani ver
 (100 = "bunu kesinlikle ben yapmaliyim", 0 = "bana gore degil").
+
+"rationale" ve "reason" alanlari kullaniciya gosterilir: ${replyLanguage()}
 
 Cevabini SADECE su bicimde, tek bir JSON kod blogu olarak ver. Baska hicbir sey yazma:
 
@@ -223,6 +227,7 @@ Kurallar:
 - Degisikliklerini dogrudan calisma dizinine yaz. Commit ATMA; birlestirmeyi sistem yapacak.
 - Kapsamin disina cikman gerekiyorsa, yapma; bunun yerine cevabinda belirt.
 - Isin bitince ne yaptigini kisaca ozetle: hangi dosyalari degistirdin ve neden.
+- Ozetin kullaniciya gosterilir: ${replyLanguage()}
 
 Isin bitiminde cevabinin sonuna su bloklari ekle:
 
@@ -239,12 +244,13 @@ export function reviewPrompt(
   diffStat: string,
   agentSummaries: string,
   conflictNote: string,
+  validation?: ValidationOutcome,
 ): string {
   const list = tasks
     .map((t) => `- ${t.id} (${t.assignedTo}): ${t.title} — ${t.status}`)
     .join('\n');
 
-  return `Sen bagimsiz bir kod inceleyicisin. Uc ayri ajan bir projede paralel calisti ve
+  return `Sen bagimsiz bir kod inceleyicisin. Bir ya da birden fazla ajan bir projede calisti ve
 calismalari tek bir dala birlestirildi. Bu birlesik sonucu incele.
 
 PLANLANAN GOREVLER:
@@ -253,9 +259,15 @@ ${list}
 AJANLARIN KENDI OZETLERI:
 ${agentSummaries}
 
-BIRLESIK DEGISIKLIKLERIN OZETI:
+BIRLESIK DEGISIKLIKLER (ozet ve varsa tam kod farki):
 ${diffStat || '(diff bos)'}
 ${conflictNote}
+
+OTOMATIK KALITE KAPISI:
+${validation?.summary ?? 'Calistirilmadi.'}
+${validation?.commands.map((command) =>
+    `\n--- ${command.command} (${command.ok ? 'gecti' : 'kaldi'}) ---\n${command.output.slice(-5000)}`,
+  ).join('') ?? ''}
 
 Su sorulara cevap ver:
 1. Planlanan gorevler gercekten yapilmis mi?
@@ -263,8 +275,10 @@ Su sorulara cevap ver:
    uyumsuz arayuzler, birbirini bozan degisiklikler)
 3. Acikca bozuk, eksik ya da tehlikeli bir sey var mi?
 
-Kodu OKU ve gercekten kontrol et; ajanlarin ozetlerine korukorune guvenme.
-Hicbir dosyayi DEGISTIRME; sadece rapor et.
+Kodu OKU ve gercekten kontrol et; ajanlarin ozetlerine korukorune guvenme. Dosya okuyamiyorsan
+yukaridaki KOD FARKI senin kanitindir; kucuk uslup tercihleri icin degil, yalnizca gercek hata,
+eksik is veya tehlike icin "changes-requested" ver.
+Hicbir dosyayi DEGISTIRME; sadece rapor et. summary ve findings alanlari kullaniciya gosterilir: ${replyLanguage()}
 
 Cevabini SADECE su bicimde, tek bir JSON kod blogu olarak ver. Baska hicbir sey yazma:
 
@@ -277,4 +291,33 @@ Cevabini SADECE su bicimde, tek bir JSON kod blogu olarak ver. Baska hicbir sey 
 \`\`\`
 
 verdict yalnizca "approved" ya da "changes-requested" olabilir.`;
+}
+
+/** Kalite kapisi veya inceleyici hata buldugunda tek kontrollu duzeltme turu. */
+export function repairPrompt(
+  tasks: Task[],
+  findings: string[],
+  validation?: ValidationOutcome,
+): string {
+  return `Sen entegrasyon dalindaki kalite sorumlususun. Ajanlarin birlestirilmis calismasini
+duzeltmen gerekiyor. Yeni ozellik ekleme; yalnizca planlanan isi tamamla ve asagidaki
+somut hatalari gider.
+
+PLANLANAN GOREVLER:
+${tasks.map((task) => `- ${task.id}: ${task.title} — ${task.status}`).join('\n')}
+
+INCELEME BULGULARI:
+${findings.length ? findings.map((finding) => `- ${finding}`).join('\n') : '- Inceleyici bulgusu yok; kalite komutu basarisiz.'}
+
+KALITE KOMUTLARI:
+${validation?.commands.map((command) =>
+    `\n--- ${command.command} (${command.ok ? 'gecti' : 'kaldi'}) ---\n${command.output.slice(-6000)}`,
+  ).join('') || 'Otomatik komut yok.'}
+
+Kurallar:
+- Once ilgili dosyalari ve hatayi gercekten incele.
+- En kucuk guvenli duzeltmeyi yap.
+- Testleri calistir; var olan davranisi gereksiz yere degistirme.
+- Commit atma; sistemi bunu kendisi yapacak.
+- Sonunda degisen dosyalari ve dogrulamayi kisaca ozetle.`;
 }

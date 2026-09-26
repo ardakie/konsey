@@ -7,6 +7,7 @@
 import { checkAvailability } from './core/discovery';
 import { Orchestrator } from './core/orchestrator';
 import { AGENT_LABEL } from './core/adapters';
+import { L } from './shared/i18n';
 
 const C = {
   reset: '\x1b[0m',
@@ -27,7 +28,7 @@ const AGENT_COLOR: Record<string, string> = {
 };
 
 async function doctor(): Promise<number> {
-  console.log(`${C.bold}Konsey — ajan durumu${C.reset}\n`);
+  console.log(`${C.bold}${L('Konsey — ajan durumu', 'Konsey — agent status')}${C.reset}\n`);
   const avail = await checkAvailability();
   let allOk = true;
   for (const a of avail) {
@@ -38,7 +39,7 @@ async function doctor(): Promise<number> {
   }
   console.log();
   if (!allOk) {
-    console.log(`${C.yellow}Bazi ajanlar kullanilamiyor. Konsey kalan ajanlarla calisir.${C.reset}`);
+    console.log(`${C.yellow}${L('Bazı ajanlar kullanılamıyor. Konsey kalan ajanlarla çalışır.', 'Some agents are unavailable. Konsey will work with the rest.')}${C.reset}`);
   }
   return allOk ? 0 : 1;
 }
@@ -58,7 +59,7 @@ async function run(projectDir: string, prompt: string): Promise<number> {
 
   const controller = new AbortController();
   process.on('SIGINT', () => {
-    console.log(`\n${C.yellow}Iptal ediliyor...${C.reset}`);
+    console.log(`\n${C.yellow}${L('İptal ediliyor...', 'Cancelling...')}${C.reset}`);
     controller.abort();
   });
 
@@ -77,16 +78,16 @@ async function run(projectDir: string, prompt: string): Promise<number> {
 
   const record = await orch.start({ projectDir, prompt, signal: controller.signal, providers });
 
-  console.log(`\n${C.bold}── SONUC ──${C.reset}`);
-  console.log(`Durum: ${record.phase}`);
-  if (record.error) console.log(`${C.red}Hata: ${record.error}${C.reset}`);
-  if (record.integrationBranch) console.log(`Entegrasyon dali: ${record.integrationBranch}`);
+  console.log(`\n${C.bold}── ${L('SONUÇ', 'RESULT')} ──${C.reset}`);
+  console.log(`${L('Durum', 'Status')}: ${record.phase}`);
+  if (record.error) console.log(`${C.red}${L('Hata', 'Error')}: ${record.error}${C.reset}`);
+  if (record.integrationBranch) console.log(`${L('Entegrasyon dalı', 'Integration branch')}: ${record.integrationBranch}`);
   for (const t of record.tasks) {
     const icon = t.status === 'succeeded' ? `${C.green}✓${C.reset}` : `${C.red}✗${C.reset}`;
     console.log(`  ${icon} ${t.id} (${t.assignedTo}) ${t.title}`);
   }
   if (record.review) {
-    console.log(`\nInceleme (${record.review.reviewer}): ${record.review.verdict}`);
+    console.log(`\n${L('İnceleme', 'Review')} (${record.review.reviewer}): ${record.review.verdict}`);
     console.log(record.review.summary);
     for (const f of record.review.findings) console.log(`  • ${f}`);
   }
@@ -103,14 +104,14 @@ async function main(): Promise<void> {
   if (cmd === 'run') {
     const [dir, ...promptParts] = rest;
     if (!dir || promptParts.length === 0) {
-      console.error('Kullanim: konsey run <proje-dizini> "<istek>"');
+      console.error(L('Kullanım: konsey run <proje-dizini> "<istek>"', 'Usage: konsey run <project-dir> "<request>"'));
       process.exitCode = 2;
       return;
     }
     process.exitCode = await run(dir, promptParts.join(' '));
     return;
   }
-  console.error(`Bilinmeyen komut: ${cmd}`);
+  console.error(L(`Bilinmeyen komut: ${cmd}`, `Unknown command: ${cmd}`));
   process.exitCode = 2;
 }
 

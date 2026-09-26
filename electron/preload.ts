@@ -7,31 +7,60 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { KonseyEvent } from '../src/shared/types';
 
+const invoke = (channel: string, ...args: unknown[]) => ipcRenderer.invoke(channel, ...args);
+const arg = (name: string) => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3) ?? '';
+
 const api = {
-  browser: (action: string, value?: unknown) => ipcRenderer.invoke('preview:browser', action, value),
-  simulator: (action: string, id?: string) => ipcRenderer.invoke('preview:simulator', action, id),
-  availability: (preferWorkspace?: string) => ipcRenderer.invoke('konsey:availability', preferWorkspace),
-  pickImages: () => ipcRenderer.invoke('konsey:images:pick'),
-  imagesFromPaths: (paths: string[]) => ipcRenderer.invoke('konsey:images:fromPaths', paths),
-  saveImage: (input: { name?: string; mime: string; bytes: ArrayBuffer }) =>
-    ipcRenderer.invoke('konsey:images:save', input),
+  /** Arayuz dili ve isletim sistemi; ana surec belirler. */
+  lang: arg('konsey-lang') || 'en',
+  platform: arg('konsey-platform') || process.platform,
+  system: () => invoke('konsey:system'),
+  connectList: () => invoke('konsey:connect:list'),
+  connectRun: (id: string, action: 'install' | 'login') => invoke('konsey:connect:run', id, action),
+  openExternal: (url: string) => invoke('konsey:openExternal', url),
+  relaunch: () => invoke('konsey:relaunch'),
+  checkUpdate: () => invoke('konsey:update:check'),
+  openDownloads: () => invoke('konsey:update:open'),
+
+  browser: (action: string, value?: unknown) => invoke('preview:browser', action, value),
+  simulator: (action: string, id?: string) => invoke('preview:simulator', action, id),
+
+  availability: (preferWorkspace?: string) => invoke('konsey:availability', preferWorkspace),
+  quotas: (refresh?: boolean) => invoke('konsey:quotas', refresh),
+  usage: () => invoke('konsey:usage'),
+
+  pickImages: () => invoke('konsey:images:pick'),
+  imagesFromPaths: (paths: string[]) => invoke('konsey:images:fromPaths', paths),
+  saveImage: (input: { name?: string; mime: string; bytes: ArrayBuffer }) => invoke('konsey:images:save', input),
   filePath: (file: File) => webUtils.getPathForFile(file),
 
-  loadConfig: () => ipcRenderer.invoke('konsey:config:load'),
-  saveConfig: (config: unknown) => ipcRenderer.invoke('konsey:config:save', config),
+  loadConfig: () => invoke('konsey:config:load'),
+  saveConfig: (config: unknown) => invoke('konsey:config:save', config),
+  setTheme: (theme: string) => invoke('konsey:theme', theme),
 
-  setProviderKey: (slug: string, apiKey: string) =>
-    ipcRenderer.invoke('konsey:provider:setKey', slug, apiKey),
-  hasProviderKey: (slug: string) => ipcRenderer.invoke('konsey:provider:hasKey', slug),
-  testProvider: (provider: unknown, apiKey?: string) =>
-    ipcRenderer.invoke('konsey:provider:test', provider, apiKey),
+  setProviderKey: (slug: string, apiKey: string) => invoke('konsey:provider:setKey', slug, apiKey),
+  hasProviderKey: (slug: string) => invoke('konsey:provider:hasKey', slug),
+  testProvider: (provider: unknown, apiKey?: string) => invoke('konsey:provider:test', provider, apiKey),
 
-  pickProject: () => ipcRenderer.invoke('konsey:pickProject'),
-  openPath: (target: string) => ipcRenderer.invoke('konsey:openPath', target),
+  pickProject: () => invoke('konsey:pickProject'),
+  selectProject: (dir: string) => invoke('konsey:project:select', dir),
+  describeProject: (dir: string) => invoke('konsey:project:describe', dir),
+  prepareProject: (dir: string) => invoke('konsey:project:prepare', dir),
+  openPath: (target: string) => invoke('konsey:openPath', target),
+  reveal: (target: string) => invoke('konsey:reveal', target),
 
-  startRun: (args: { projectDir: string; prompt: string }) =>
-    ipcRenderer.invoke('konsey:run:start', args),
-  cancelRun: () => ipcRenderer.invoke('konsey:run:cancel'),
+  loadChats: (projectDir: string | null) => invoke('konsey:chat:load', projectDir),
+  sendChat: (args: { projectDir: string | null; thread: string; text: string }) => invoke('konsey:chat:send', args),
+  cancelChat: (thread: string) => invoke('konsey:chat:cancel', thread),
+  clearChat: (projectDir: string | null, thread: string) => invoke('konsey:chat:clear', projectDir, thread),
+
+  listRuns: (projectDir?: string | null) => invoke('konsey:runs:list', projectDir),
+  getRun: (id: string) => invoke('konsey:runs:get', id),
+  deleteRun: (id: string) => invoke('konsey:runs:delete', id),
+  applyRun: (id: string) => invoke('konsey:runs:apply', id),
+
+  startRun: (args: { projectDir: string; prompt: string; mode?: string }) => invoke('konsey:run:start', args),
+  cancelRun: () => invoke('konsey:run:cancel'),
 
   onEvent: (handler: (event: KonseyEvent) => void) => {
     const listener = (_e: unknown, event: KonseyEvent) => handler(event);

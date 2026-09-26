@@ -5,6 +5,7 @@
  * duswmesi olagan bir durum. Bunlari "genel hata"dan ayirmak, orkestratorun
  * o ajani devre disi birakip isini digerlerine dagitabilmesini saglar.
  */
+import { L } from '../../shared/i18n';
 import type { FailureKind } from '../../shared/types';
 
 const AUTH_PATTERNS = [
@@ -83,19 +84,22 @@ export function remedyFor(agent: string, kind: FailureKind, retryHint?: string):
   switch (kind) {
     case 'auth':
       return agent === 'claude'
-        ? 'Claude oturumu dusmus. Terminalde `claude` calistirip /login ile yeniden giris yapin.'
+        ? L('Claude oturumu düşmüş. Terminalde `claude` çalıştırıp /login ile yeniden giriş yapın.', 'Claude session has expired. Run `claude` in the terminal and log in again with /login.')
         : agent === 'codex'
-          ? 'Codex oturumu dusmus. ChatGPT uygulamasindan cikip yeniden giris yapin.'
-          : 'Antigravity oturumu dusmus. Uygulamadan yeniden giris yapin.';
+          ? L('Codex oturumu düşmüş. ChatGPT uygulamasından çıkıp yeniden giriş yapın.', 'Codex session has expired. Sign out of the ChatGPT app and log in again.')
+          : L('Antigravity oturumu düşmüş. Uygulamadan yeniden giriş yapın.', 'Antigravity session has expired. Log in again from the app.');
     case 'quota':
-      return `Kota doldu.${retryHint ? ` Yeniden deneme: ${retryHint}.` : ''} Bu ajan bu calismada atlanacak.`;
+      return L(
+        `Kota doldu.${retryHint ? ` Yeniden deneme: ${retryHint}.` : ''} Bu ajan bu çalışmada atlanacak.`,
+        `Quota is full.${retryHint ? ` Retry: ${retryHint}.` : ''} This agent will be skipped for this run.`,
+      );
     case 'timeout':
-      return 'Zaman asimi. Gorev cok buyuk olabilir; daha kucuk parcalara bolmeyi deneyin.';
+      return L('Zaman aşımı. Görev çok büyük olabilir; daha küçük parçalara bölmeyi deneyin.', 'Timed out. The task may be too large; try splitting it into smaller pieces.');
     case 'unavailable':
-      return 'Ajan calistirilamiyor (uygulama kapali ya da CLI bulunamadi).';
+      return L('Ajan çalıştırılamıyor (uygulama kapalı ya da CLI bulunamadı).', 'The agent cannot be run (the app is closed or the CLI was not found).');
     case 'cancelled':
-      return 'Iptal edildi.';
+      return L('İptal edildi.', 'Cancelled.');
     default:
-      return 'Bilinmeyen hata.';
+      return L('Bilinmeyen hata.', 'Unknown error.');
   }
 }

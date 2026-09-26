@@ -1,5 +1,5 @@
 /**
- * Piksel ofis sahnesi — tepeden bakis.
+ * Piksel ofis sahnesi — tepeden (3/4) bakis.
  *
  * Gorsel varliklar (karakterler, mobilya, zemin) pixel-agents projesinden
  * alinmistir (MIT). Karakter sprite'lari JIK-A-4'un "Metro City" ucretsiz
@@ -8,15 +8,27 @@
  * Sprite sayfasi duzeni (pixel-agents ile ayni):
  *   char_N.png = 112x96, 16x32'lik kareler, 3 satir (down, up, right)
  *   yurume  = [0, 1, 2, 1]
- *   yazma   = [3, 4]
- *   okuma   = [5, 6]
+ *   yazma   = [3, 4]   (oturma pozu)
+ *   okuma   = [5, 6]   (oturma pozu)
  *   sola bakis, saga bakisin yatay yansimasidir.
  *
- * Sahne once mantiksal cozunurlukte bir ara tuvale cizilir, sonra tam sayi
- * katiyla buyutulup ekrana basilir. Boylece piksel yazi tipi ve sprite'lar
- * ayni netlikte kalir.
+ * Yerlesim tek siradir: solda toplanti masasi, ortada calisma masalari,
+ * sagda dinlenme kosesi, en sagda uyku odasi. Boylece genis ve alcak bir
+ * seritte bos zemin kalmaz.
+ *
+ * Derinlik: her sprite taban cizgisine (z) gore sirali cizilir. Oturan
+ * karakterin onundeki sandalye/masa ondan sonra cizildigi icin karakter
+ * mobilyanin "ustune cikmaz"; arkasindaki sandalye ise onun altinda kalir.
+ *
+ * Yollar: ajanlar mobilyanin icinden gecmez. Her oturma yerinin ana
+ * koridordan (alttaki yurume yolu) baslayan bir rotasi vardir; ajan once
+ * geldigi rotayi geri yurur, koridorda yatay ilerler, sonra yeni rotaya girer.
+ *
+ * Sahne once mantiksal cozunurlukte bir ara tuvale cizilir, sonra iki eksende
+ * ayni oranla ve yumusatma kapali olarak ekrana basilir.
  */
 import { drawText, fitText, measureText } from './pixelFont';
+import { L } from '../../src/shared/i18n';
 
 export type AgentActivity =
   | 'offline'
@@ -35,43 +47,55 @@ export interface OfficeAgent {
   id: string;
   label: string;
   color: string;
+  /** Sprite sayfasi; verilmezse sira numarasindan secilir. */
+  charIndex?: number;
 }
 
 // --- izgara ve yerlesim (mantiksal piksel) ---
 const TILE = 16;
-/** Bir masa istasyonunun genisligi: masa (48) + bosluk (16). */
-const STATION_W = 64;
-/** Bir masa sirasinin yuksekligi: masa + karakter + sandalye + koridor. */
-const STATION_H = 72;
-/** Bir sirada en fazla kac masa; fazlasi alt siraya tasar. */
-const DESKS_PER_ROW = 5;
-
-const MARGIN_X = 16;
 const WALL_H = 32;
-const WORK_TOP = WALL_H + 8;
-/** Alt taraftaki dinlenme alaninin yuksekligi. */
-const LOUNGE_H = 132;
-/** Sahnenin en az genisligi — dinlenme alani sigsin diye. */
-const MIN_WIDTH = 448;
-const SLEEP_CELL_W = 90;
-const SLEEP_CELL_H = 86;
-const SLEEP_ROWS = 2;
-const SLEEP_PADDING = 14;
-const SLEEP_DOOR_Y = WALL_H + 30;
-const SLEEP_BEDS = 3;
-const SLEEP_COLS = 2;
-const SLEEP_W = SLEEP_PADDING * 2 + SLEEP_COLS * SLEEP_CELL_W;
-const OPS_W = 176;
 
+/** Bir masa istasyonu: masa (48) + iki yaninda 8'er piksel. */
+const STATION_W = 64;
 const DESK_W = 48;
-/** Masanin ustunden karakterin oturdugu noktaya kadar. */
-const SEAT_DY = 8;
-/** Masanin ustunden sandalyeye. */
-const CHAIR_DY = 6;
-/** Sira icindeki yurume koridoru, sandalyenin altinda. */
-const LANE_DY = 52;
+/** Bir sirada en fazla uc masa; dorduncu ajanla ikinci sira acilir. */
+const DESKS_PER_ROW = 3;
+/** Ilk masa sirasinin ust kenari. */
+const DESK_Y = 40;
+/** Birden fazla masa sirasi olursa aralarindaki mesafe. */
+const ROW_H = 72;
+/** Masanin ust kenarindan oturan karakterin cizim noktasina. */
+const DESK_SEAT_DY = 16;
+/** Masanin ust kenarindan sandalyeye. */
+const DESK_CHAIR_DY = 15;
+/** Son masa sirasindan ana koridora (karakterin ust kenari). */
+const LANE_DY = 60;
+/** Ana koridorun altinda kalan zemin. */
+const FLOOR_BELOW_LANE = 46;
 
-const DOOR_X = 8;
+/** Toplanti masasi ve dinlenme kosesinde ust sira koltuklarin ust kenari. */
+const ZONE_Y = 54;
+/** Duvar ile ust sira koltuklar arasindaki arka yol (karakterin ust kenari). */
+const BACK_LANE_Y = 36;
+
+const MARGIN_L = 8;
+/** Toplanti bolgesi: sol gecit (20) + masa (80) + bosluk (12). */
+const MEET_W = 112;
+const TABLE_W = 80;
+const TABLE_H = 34;
+const MEET_SPACING = 27;
+/** Dinlenme bolgesi: koltuklar (80) + sag gecit. */
+const LOUNGE_W = 100;
+const LOUNGE_SPACING = 28;
+const MARGIN_R = 4;
+
+/** Tek sirali odada yataklar yan yana, iki sirali odada ust uste dizilir. */
+const SLEEP_W_WIDE = 190;
+const SLEEP_W_TALL = 82;
+const SLEEP_BEDS = 3;
+const BED_GAP = 58;
+const BED_Y = 62;
+const BED_GAP_TALL = 56;
 
 const CHAR_FRAME_W = 16;
 const CHAR_FRAME_H = 32;
@@ -84,6 +108,39 @@ const TYPING_FRAMES = [3, 4];
 const READING_FRAMES = [5, 6];
 
 const CHAR_COUNT = 6;
+/** Yurume hizi (mantiksal piksel / ms). */
+const WALK_SPEED = 0.045;
+
+/**
+ * Alti koltuklu masalarda ajanlarin oturma sirasi: once ust koseler, sonra
+ * alt koseler, en son ortalar. Etiketler boylece birbirine binmez.
+ * 0..2 ust sira (soldan saga), 3..5 alt sira.
+ */
+const SEAT_ORDER = [0, 2, 3, 5, 1, 4];
+
+type Facing = 'up' | 'down' | 'left' | 'right';
+type Place = 'desk' | 'meet' | 'rest' | 'bed';
+
+interface Pt {
+  x: number;
+  y: number;
+}
+
+interface Seat extends Pt {
+  facing: Facing;
+  /** Koridordan koltuga ara noktalar: ilki koridorun uzerinde, sonuncusu koltuk. */
+  route: Pt[];
+  /** Verilirse isim etiketi koltugun altinda bu y'de durur. */
+  tagBelow?: number;
+  /** Kafanin ustundeki etiketi komsusundan ayirmak icin ek yukseklik. */
+  lift?: number;
+}
+
+interface Step extends Pt {
+  kind: 'out' | 'lane' | 'in';
+  /** 'out' adiminda geri yurunen iz noktasinin sirasi. */
+  index?: number;
+}
 
 interface Runtime {
   agent: OfficeAgent;
@@ -91,21 +148,22 @@ interface Runtime {
   charIndex: number;
   x: number;
   y: number;
-  facing: 'up' | 'down' | 'left' | 'right';
+  facing: Facing;
   activity: AgentActivity;
-  walkStage: 'lane' | 'seat' | 'meeting' | 'sleep-door' | 'sleep-bed' | null;
   phase: number;
   lastPulse: number;
   activitySince: number;
   /** Kapidan sirayla cikis icin: bu ana kadar bekle. */
   walkDelayUntil: number;
-  /** Masaya varinca uygulanacak durum. */
-  pending?: AgentActivity;
+  /** Gidilen (ya da oturulan) yer. */
+  dest: Place;
+  path: Step[];
+  /** Koridordan su anki konuma kadar gecilen rota noktalari; bos: koridorda. */
+  trail: Pt[];
+  seated: boolean;
   sleepSlot?: number;
   retryAt?: number;
   retryHint?: string;
-  leisure?: number;
-  stroll?: boolean;
 }
 
 interface Assets {
@@ -119,20 +177,28 @@ interface Assets {
   props: Record<string, HTMLImageElement>;
 }
 
+interface Drawable {
+  z: number;
+  draw: () => void;
+}
+
 const PROP_FILES = [
-  'PLANT', 'PLANT_2', 'LARGE_PLANT', 'CACTUS', 'POT',
-  'SOFA_BACK', 'SOFA_FRONT', 'SOFA_SIDE', 'COFFEE_TABLE', 'COFFEE',
+  'PLANT', 'PLANT_2', 'LARGE_PLANT', 'CACTUS',
+  'SOFA_BACK', 'SOFA_FRONT', 'COFFEE_TABLE', 'COFFEE',
   'BOOKSHELF', 'DOUBLE_BOOKSHELF', 'WHITEBOARD',
   'LARGE_PAINTING', 'SMALL_PAINTING', 'SMALL_PAINTING_2',
-  'CLOCK', 'HANGING_PLANT', 'BIN', 'WOODEN_BENCH', 'CUSHIONED_CHAIR_FRONT',
-  'CUSHIONED_CHAIR_BACK', 'CUSHIONED_CHAIR_SIDE',
+  'CLOCK', 'HANGING_PLANT', 'CUSHIONED_CHAIR_FRONT', 'CUSHIONED_CHAIR_BACK',
 ];
 
-function loadImage(src: string): Promise<HTMLImageElement> {
+function loadImage(src: string, retries = 1): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error(`Gorsel yuklenemedi: ${src}`));
+    // Gecici bir okuma hatasi tum sahneyi bos birakmasin; bir kez daha denenir.
+    img.onerror = () => {
+      if (retries > 0) loadImage(src, retries - 1).then(resolve, reject);
+      else reject(new Error(`Gorsel yuklenemedi: ${src}`));
+    };
     img.src = src;
   });
 }
@@ -186,11 +252,14 @@ export class PixelOffice {
   private lastScale = 0;
   /** Ekranda kaplayabilecegi en fazla yukseklik (CSS pikseli). */
   private maxHeight = 480;
-  private reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  private width = MIN_WIDTH;
-  private workWidth = MIN_WIDTH;
-  private height = WORK_TOP + STATION_H + LOUNGE_H;
+  private workWidth = 0;
+  /** Masalarin gerektirdigi en dar calisma alani. */
+  private naturalWorkWidth = 0;
+  /** true: sahne kabin genisligini doldurur; artan genislik bolgeler arasina dagilir. */
+  private fillWidth = false;
+  private width = 0;
+  private height = 0;
   private rows = 1;
   private cols = 1;
 
@@ -208,6 +277,10 @@ export class PixelOffice {
     if (!bctx) throw new Error('Ara tuval baglami alinamadi');
     this.bctx = bctx;
     this.bctx.imageSmoothingEnabled = false;
+
+    this.measure(0);
+    this.workWidth = this.naturalWorkWidth;
+    this.width = this.workWidth + this.sleepW();
 
     this.observer = new ResizeObserver(() => this.resize());
     if (canvas.parentElement) this.observer.observe(canvas.parentElement);
@@ -258,169 +331,120 @@ export class PixelOffice {
     const now = performance.now();
     const previous = this.agents;
 
-    // Once yerlesim hesaplanir; oturma noktalari buna bagli.
-    this.cols = Math.min(DESKS_PER_ROW, Math.max(1, agents.length));
-    this.rows = Math.max(1, Math.ceil(agents.length / DESKS_PER_ROW));
-    this.workWidth = Math.max(MIN_WIDTH, MARGIN_X * 2 + this.cols * STATION_W);
-
     this.agents = agents.map((agent, i) => {
       const existing = previous.find((r) => r.agent.id === agent.id);
       if (existing) {
         existing.agent = agent;
         existing.slot = i;
+        if (agent.charIndex !== undefined) existing.charIndex = agent.charIndex % CHAR_COUNT;
         return existing;
       }
       return {
         agent,
         slot: i,
-        charIndex: i % CHAR_COUNT,
-        // Bosta ajan bilgisayar basinda degil, dinlenme alaninda baslar.
+        charIndex: (agent.charIndex ?? i) % CHAR_COUNT,
         x: 0,
         y: 0,
-        facing: 'down' as const,
+        facing: 'down' as Facing,
         activity: 'idle' as AgentActivity,
-        walkStage: null,
         phase: Math.random(),
         lastPulse: 0,
         activitySince: now,
         walkDelayUntil: 0,
+        // Bosta ajan bilgisayar basinda degil, dinlenme kosesinde baslar.
+        dest: 'rest' as Place,
+        path: [],
+        trail: [],
+        seated: false,
       };
     });
 
-    this.reflow();
-    for (const r of this.agents) {
-      if (r.activity !== 'idle') continue;
-      const rest = this.restPosition(r.slot);
-      r.x = rest.x;
-      r.y = rest.y;
-      r.facing = rest.facing;
-    }
-
+    this.measure(agents.length);
+    this.workWidth = Math.max(this.fillWidth ? this.workWidth : 0, this.naturalWorkWidth);
+    this.width = this.workWidth + this.sleepW();
     this.lastScale = 0;
     this.resize();
+    // Kadro degisince masa yerleri kayar; herkes gittigi yere yerlestirilir.
+    for (const r of this.agents) this.settle(r);
   }
 
   setActivity(id: string, activity: AgentActivity): void {
     const r = this.agents.find((a) => a.agent.id === id);
     if (!r) return;
-    // Kota uykusu task tamamlandi/stream geldi olaylarindan daha onceliklidir.
-    if ((r.activity === 'sleeping' || r.activity === 'retiring') && activity !== 'offline') return;
+    // Kota uykusu, gorev tamamlandi/stream geldi olaylarindan onceliklidir.
+    if (r.sleepSlot !== undefined && activity !== 'offline') return;
 
-    const seatsDown = activity === 'working' || activity === 'reading' || activity === 'thinking';
-    const now = performance.now();
-
-    // Masasina yuruyorsa yuruyusu bastan baslatma; yalnizca varista ne
-    // yapacagini guncelle. Aksi halde her cikti parcasi ajani kapida kilitler.
-    if (r.activity === 'arriving') {
-      if (seatsDown) {
-        if (r.walkStage === 'meeting') r.walkStage = 'lane';
-        r.pending = activity;
-      } else if (activity === 'meeting') {
-        r.walkStage = 'meeting';
-        r.pending = activity;
-      } else {
-        r.activity = activity;
-        r.walkStage = null;
-        r.activitySince = now;
-      }
+    if (activity === 'offline') {
+      r.activity = 'offline';
+      r.path = [];
       return;
     }
-
-    if (r.activity === activity) return;
-    r.activitySince = now;
-
-    if (activity === 'meeting') {
-      r.activity = 'arriving';
-      r.walkStage = 'meeting';
-      r.walkDelayUntil = 0;
-      r.pending = 'meeting';
-      return;
+    if (r.activity === 'offline') {
+      // Yeniden gorunen ajan dinlenme kosesinde belirir.
+      r.dest = 'rest';
+      this.settle(r);
     }
-
-    const atSeat =
-      Math.abs(r.x - this.seatX(r.slot)) < 1 && Math.abs(r.y - this.seatY(r.slot)) < 1;
-    if (seatsDown && !atSeat) {
-      r.activity = 'arriving';
-      r.walkStage = 'lane';
-      r.walkDelayUntil = 0;
-      r.pending = activity;
-      return;
+    if (r.activity !== activity) {
+      r.activity = activity;
+      r.activitySince = performance.now();
     }
-
-    r.activity = activity;
-    r.walkStage = null;
+    const place = this.placeFor(activity);
+    if (place && place !== r.dest) this.goTo(r, place);
   }
 
-  /** Kota dolan ajani sagda acilan odaya yollar ve reset sayacini yataginda gosterir. */
+  /** Kullanilamaz durumdan donen ajani yeniden gorunur yapar. */
+  setOnline(id: string): void {
+    const r = this.agents.find((a) => a.agent.id === id);
+    if (r?.activity === 'offline') this.setActivity(id, 'idle');
+  }
+
+  /** Kota dolan ajani sagdaki uyku odasina yollar ve reset sayacini yataginda gosterir. */
   setSleeping(id: string, retryAt?: number, retryHint?: string): void {
     const r = this.agents.find((a) => a.agent.id === id);
     if (!r) return;
-    const alreadySleeping = r.sleepSlot !== undefined;
-    if (r.sleepSlot === undefined) {
-      const used = new Set(this.agents.flatMap((a) => a.sleepSlot === undefined ? [] : [a.sleepSlot]));
-      let slot = 0;
-      while (used.has(slot)) slot++;
-      r.sleepSlot = slot;
-    }
     r.retryAt = retryAt;
     r.retryHint = retryHint;
-    if (alreadySleeping && (r.activity === 'sleeping' || r.activity === 'retiring')) {
-      this.reflow();
+    if (r.sleepSlot !== undefined) return;
+    const used = new Set(this.agents.flatMap((a) => (a.sleepSlot === undefined ? [] : [a.sleepSlot])));
+    let slot = 0;
+    while (used.has(slot)) slot++;
+    r.sleepSlot = slot;
+    if (r.activity === 'offline') {
+      r.dest = 'bed';
+      this.settle(r);
+      r.activity = 'sleeping';
       return;
     }
     r.activity = 'retiring';
-    r.walkStage = 'sleep-door';
-    r.pending = 'sleeping';
     r.activitySince = performance.now();
-    this.reflow();
-    requestAnimationFrame(() => {
-      const frame = this.canvas.parentElement;
-      if (frame) frame.scrollTo({ left: frame.scrollWidth, behavior: 'smooth' });
-    });
+    this.goTo(r, 'bed');
   }
 
   setAvailable(id: string): void {
     const r = this.agents.find((a) => a.agent.id === id);
     if (!r) return;
-    r.sleepSlot = undefined;
     r.retryAt = undefined;
     r.retryHint = undefined;
     r.activity = 'idle';
-    r.walkStage = null;
-    this.reflow();
-    const rest = this.restPosition(r.slot);
-    r.x = rest.x;
-    r.y = rest.y;
-    r.facing = rest.facing;
-  }
-
-  private reflow(): void {
-    const sleepingAgents = this.agents
-      .filter((a) => a.sleepSlot !== undefined)
-      .sort((a, b) => a.sleepSlot! - b.sleepSlot!);
-    sleepingAgents.forEach((agent, index) => { agent.sleepSlot = index; });
-    // Uc ana ajan icin uyku odasi her zaman ayni boyda ve uc yataklidir.
-    this.width = this.workWidth + SLEEP_W;
-    const workHeight = WORK_TOP + this.rows * STATION_H + LOUNGE_H;
-    const sleepHeight = WALL_H + 16 + SLEEP_ROWS * SLEEP_CELL_H + 12;
-    this.height = Math.max(workHeight, sleepHeight);
-    this.lastScale = 0;
-    this.resize();
+    r.activitySince = performance.now();
+    // Yataktan kalkip dinlenme kosesine yurur; rota yataktan geri baslar.
+    this.goTo(r, 'rest');
+    r.sleepSlot = undefined;
   }
 
   /**
-   * Yeni bir calisma basladi: ajanlar kapiya alinir ve masalarina yururler.
+   * Yeni bir calisma basladi: ajanlar sirayla toplanti masasina yurur.
    * Kullanilamayan ajanlar disarida kalir.
    */
   enterOffice(): void {
     const now = performance.now();
+    let order = 0;
     for (const r of this.agents) {
       if (r.activity === 'offline' || r.sleepSlot !== undefined) continue;
-      r.activity = 'arriving';
-      r.walkStage = 'meeting';
+      r.activity = 'meeting';
       r.activitySince = now;
-      r.walkDelayUntil = now + r.slot * 420;
-      r.pending = 'meeting';
+      r.walkDelayUntil = now + order++ * 350;
+      this.goTo(r, 'meet', true);
     }
   }
 
@@ -431,13 +455,21 @@ export class PixelOffice {
     }
   }
 
+  /** Sahnenin kabin genisligini tamamen doldurmasini ister (tam genislik serit). */
+  setFillWidth(on: boolean): void {
+    if (this.fillWidth === on) return;
+    this.fillWidth = on;
+    this.lastScale = 0;
+    this.resize();
+  }
+
   /**
    * Sahnenin ekranda kaplayabilecegi en fazla yuksekligi belirler.
    * Olcek hem genislige hem bu sinira gore secilir; boylece ofis
    * gorev ve akis panellerini asagi itmez.
    */
   setMaxHeight(px: number): void {
-    const next = Math.max(120, Math.round(px));
+    const next = Math.max(100, Math.round(px));
     if (next === this.maxHeight) return;
     this.maxHeight = next;
     this.lastScale = 0;
@@ -477,81 +509,246 @@ export class PixelOffice {
 
   // ------------------------------------------------------------- yerlesim
 
-  private col(slot: number): number {
-    return slot % DESKS_PER_ROW;
+  private measure(count: number): void {
+    this.cols = Math.min(DESKS_PER_ROW, Math.max(2, count));
+    this.rows = Math.max(1, Math.ceil(count / DESKS_PER_ROW));
+    this.naturalWorkWidth = MARGIN_L + MEET_W + this.cols * STATION_W + LOUNGE_W + MARGIN_R;
+    this.height = this.lane() + FLOOR_BELOW_LANE;
   }
 
-  private row(slot: number): number {
-    return Math.floor(slot / DESKS_PER_ROW);
+  /** Ana koridor: son masa sirasinin sandalyelerinin altindan gecer. */
+  private lane(): number {
+    return this.rowY(this.rows - 1) + LANE_DY;
   }
 
-  private stationX(slot: number): number {
-    return MARGIN_X + this.col(slot) * STATION_W;
+  private rowY(row: number): number {
+    return DESK_Y + row * ROW_H;
   }
 
-  private stationY(slot: number): number {
-    return WORK_TOP + this.row(slot) * STATION_H;
+  private meetX(): number {
+    return MARGIN_L;
   }
 
-  private seatX(slot: number): number {
-    return this.stationX(slot) + (DESK_W - CHAR_FRAME_W) / 2;
+  /** Masa blogu, toplanti ve dinlenme bolgeleri arasinda ortalanir. */
+  private deskX(): number {
+    const extra = this.workWidth - this.naturalWorkWidth;
+    return MARGIN_L + MEET_W + Math.floor(extra / 2);
   }
 
-  private seatY(slot: number): number {
-    return this.stationY(slot) + SEAT_DY;
+  /**
+   * Toplanti ve dinlenme bolgelerinin dikey kaydirmasi. Iki masa sirasinda
+   * oda uzar; bu bolgeler ortalanir, ustte kalan alana dekor konur.
+   */
+  private zoneShift(): number {
+    return this.rows > 1 ? Math.round((this.lane() - 100) / 2) : 0;
   }
 
-  /** Ajanin kendi sirasindaki yurume koridoru. */
-  private laneY(slot: number): number {
-    return this.stationY(slot) + LANE_DY;
+  private zoneY(): number {
+    return ZONE_Y + this.zoneShift();
   }
 
-  /** Bosta ajanlar bilgisayar basinda degil, dinlenme alaninda bekler. */
-  private restPosition(slot: number): { x: number; y: number; facing: Runtime['facing'] } {
-    const top = WORK_TOP + this.rows * STATION_H + 8;
-    const loungeX = this.workWidth - 132;
-    const seats = [
-      { x: loungeX + 30, y: top + 29, facing: 'up' as const },
-      { x: loungeX + 46, y: top + 29, facing: 'up' as const },
-      { x: loungeX + 78, y: top + 29, facing: 'up' as const },
-    ];
-    return seats[slot % seats.length];
+  private backLaneY(): number {
+    return BACK_LANE_Y + this.zoneShift();
   }
 
-  private meetingPosition(slot: number): { x: number; y: number; facing: Runtime['facing'] } {
-    const top = WORK_TOP + this.rows * STATION_H + 8;
-    const seats = [
-      { x: 82, y: top + 2, facing: 'down' as const },
-      { x: 62, y: top + 29, facing: 'right' as const },
-      { x: 153, y: top + 29, facing: 'left' as const },
-    ];
-    return seats[slot % seats.length];
+  private tallSleep(): boolean {
+    return this.rows > 1;
+  }
+
+  private sleepW(): number {
+    return this.tallSleep() ? SLEEP_W_TALL : SLEEP_W_WIDE;
+  }
+
+  private loungeX(): number {
+    return this.workWidth - MARGIN_R - LOUNGE_W;
+  }
+
+  /** Masanin sol ust kosesi. */
+  private deskPos(slot: number): Pt {
+    const col = slot % DESKS_PER_ROW;
+    const row = Math.floor(slot / DESKS_PER_ROW);
+    return { x: this.deskX() + col * STATION_W + (STATION_W - DESK_W) / 2, y: this.rowY(row) };
+  }
+
+  private tableRect(): { x: number; y: number; w: number; h: number } {
+    return { x: this.meetX() + 20, y: this.zoneY() + 15, w: TABLE_W, h: TABLE_H };
+  }
+
+  private meetChairX(k: number): number {
+    return this.tableRect().x + 5 + k * MEET_SPACING;
+  }
+
+  /** Toplanti masasinin alt sirasindaki sandalyelerin ust kenari. */
+  private meetBottomChairY(): number {
+    const t = this.tableRect();
+    return t.y + t.h + 2;
+  }
+
+  private loungeSeatX(k: number): number {
+    return this.loungeX() + 8 + k * LOUNGE_SPACING;
+  }
+
+  private loungeBottomY(): number {
+    return this.zoneY() + 44;
+  }
+
+  private bedPos(slot: number): Pt {
+    if (this.tallSleep()) {
+      return { x: this.workWidth + 26, y: WALL_H + 26 + (slot % SLEEP_BEDS) * BED_GAP_TALL };
+    }
+    return { x: this.workWidth + 13 + (slot % SLEEP_BEDS) * BED_GAP, y: BED_Y };
+  }
+
+  private placeFor(activity: AgentActivity): Place | null {
+    switch (activity) {
+      case 'working':
+      case 'reading':
+      case 'thinking':
+        return 'desk';
+      case 'meeting':
+        return 'meet';
+      case 'idle':
+        return 'rest';
+      default:
+        // Bitti/takildi: bulundugu yerde kalir.
+        return null;
+    }
+  }
+
+  private seatFor(r: Runtime, place: Place): Seat {
+    const lane = this.lane();
+
+    if (place === 'desk') {
+      const desk = this.deskPos(r.slot);
+      const row = Math.floor(r.slot / DESKS_PER_ROW);
+      const x = desk.x + (DESK_W - CHAR_FRAME_W) / 2;
+      const y = desk.y + DESK_SEAT_DY;
+      const tagBelow = desk.y + DESK_CHAIR_DY + CHAR_FRAME_H + 2;
+      if (row === this.rows - 1) {
+        return { x, y, facing: 'up', route: [{ x, y: lane }, { x, y }], tagBelow };
+      }
+      // Ust siralar: masa blogunun solundaki gecitten kendi sirasinin koridoruna.
+      const aisle = this.deskX() - 12;
+      const rowLane = desk.y + 34;
+      return {
+        x, y, facing: 'up', tagBelow,
+        route: [{ x: aisle, y: lane }, { x: aisle, y: rowLane }, { x, y: rowLane }, { x, y }],
+      };
+    }
+
+    if (place === 'meet' || place === 'rest') {
+      const seat = SEAT_ORDER[r.slot % SEAT_ORDER.length];
+      const k = seat % 3;
+      const top = seat < 3;
+      const meet = place === 'meet';
+      const x = meet ? this.meetChairX(k) : this.loungeSeatX(k);
+      if (top) {
+        // Ust sira: masaya bakar (asagi); duvar dibindeki arka yoldan girilir.
+        const aisle = meet ? this.meetX() + 2 : this.loungeX() + 84;
+        // Toplantida govde masanin ustunde gorunsun diye iki piksel daha dik oturur.
+        const y = this.zoneY() - (meet ? 12 : 10);
+        return {
+          x, y, facing: 'down', lift: k === 1 ? 10 : 0,
+          route: [{ x: aisle, y: lane }, { x: aisle, y: this.backLaneY() }, { x, y: this.backLaneY() }, { x, y }],
+        };
+      }
+      // Alt sira: sirti bize donuk; koridordan dogrudan girilir.
+      const chairY = meet ? this.meetBottomChairY() : this.loungeBottomY();
+      const y = chairY - 10;
+      return {
+        x, y, facing: 'up',
+        tagBelow: k === 1 ? undefined : chairY + 17,
+        route: [{ x, y: lane }, { x, y }],
+      };
+    }
+
+    // Uyku odasi: bolme kapisindan gecip yatagin yanina.
+    const bed = this.bedPos(r.sleepSlot ?? 0);
+    const x = bed.x + 15;
+    const y = bed.y + 4;
+    if (this.tallSleep()) {
+      // Ust uste yataklar: soldaki gecitten yukari, sonra yatagin yanina.
+      const aisle = this.workWidth + 6;
+      return { x, y, facing: 'right', route: [{ x: aisle, y: lane }, { x: aisle, y }, { x, y }] };
+    }
+    return { x, y, facing: 'up', route: [{ x, y: lane }, { x, y }] };
+  }
+
+  /** Ajani yurutmeden gittigi yere yerlestirir (ilk acilis, yeniden yerlesim). */
+  private settle(r: Runtime): void {
+    const seat = this.seatFor(r, r.dest);
+    r.x = seat.x;
+    r.y = seat.y;
+    r.facing = seat.facing;
+    r.trail = seat.route.map((p) => ({ ...p }));
+    r.path = [];
+    r.seated = true;
+    if (r.dest === 'bed' && r.sleepSlot !== undefined) r.activity = 'sleeping';
+  }
+
+  /** Once gelinen rota geri yurunur, sonra koridor, sonra yeni rota. */
+  private goTo(r: Runtime, place: Place, force = false): void {
+    if (!force && r.dest === place && (r.path.length || r.seated)) return;
+    r.dest = place;
+    const seat = this.seatFor(r, place);
+    const steps: Step[] = [];
+    for (let i = r.trail.length - 1; i >= 0; i--) {
+      steps.push({ ...r.trail[i], kind: 'out', index: i });
+    }
+    const lane = this.lane();
+    if (!r.trail.length && Math.abs(r.y - lane) > 0.5) steps.push({ x: r.x, y: lane, kind: 'lane' });
+    steps.push({ ...seat.route[0], kind: 'lane' });
+    for (const p of seat.route.slice(1)) steps.push({ ...p, kind: 'in' });
+    r.path = steps;
+    r.seated = false;
   }
 
   private resize(): void {
     const parent = this.canvas.parentElement;
     if (!parent) return;
     const available = parent.clientWidth || this.width;
-    const byHeight = this.maxHeight / this.height;
-    const scale = Math.max(0.4, Math.min(4, byHeight));
-    // Ofis cercevesi sagda bos bant birakmasin. Yukseklik kullanicinin
-    // ayiricisina uyar; yatay eksen mevcut cerceveyi tamamen doldurur.
-    const outputWidth = Math.max(1, Math.round(available));
-    const outputHeight = Math.max(1, Math.round(this.height * scale));
+    const natural = this.naturalWorkWidth + this.sleepW();
+
+    let scale: number;
+    if (this.fillWidth) {
+      // Olcek once dogal genislige, sonra yukseklik sinirina gore secilir;
+      // kalan genislik bolgeler arasina dagitilir.
+      scale = Math.max(0.4, Math.min(4, available / natural, this.maxHeight / this.height));
+      const target = Math.max(this.naturalWorkWidth, Math.floor(available / scale) - this.sleepW());
+      if (target !== this.workWidth) {
+        this.workWidth = target;
+        this.width = this.workWidth + this.sleepW();
+        for (const r of this.agents) this.settle(r);
+      }
+    } else {
+      scale = Math.max(0.4, Math.min(4, available / this.width, this.maxHeight / this.height));
+    }
+
+    const dpr = window.devicePixelRatio || 1;
+    const cssWidth = Math.max(1, Math.round(this.width * scale));
+    const cssHeight = Math.max(1, Math.round(this.height * scale));
+    const pxWidth = Math.round(cssWidth * dpr);
+    const pxHeight = Math.round(cssHeight * dpr);
 
     // Tuvali yeniden boyutlandirmak kabin genisligini degistirip gozlemciyi
     // tekrar tetikleyebiliyor; olcek degismediyse dokunma.
-    if (Math.abs(scale - this.lastScale) < 0.001 && this.canvas.width === outputWidth && this.canvas.height === outputHeight) return;
+    if (
+      Math.abs(scale - this.lastScale) < 0.001 &&
+      this.canvas.width === pxWidth &&
+      this.canvas.height === pxHeight &&
+      this.buffer.width === this.width &&
+      this.buffer.height === this.height
+    ) return;
     this.lastScale = scale;
 
     this.buffer.width = this.width;
     this.buffer.height = this.height;
     this.bctx.imageSmoothingEnabled = false;
 
-    this.canvas.width = outputWidth;
-    this.canvas.height = outputHeight;
-    this.canvas.style.width = `${outputWidth}px`;
-    this.canvas.style.height = `${outputHeight}px`;
+    this.canvas.width = pxWidth;
+    this.canvas.height = pxHeight;
+    this.canvas.style.width = `${cssWidth}px`;
+    this.canvas.style.height = `${cssHeight}px`;
     this.ctx.imageSmoothingEnabled = false;
   }
 
@@ -559,143 +756,64 @@ export class PixelOffice {
 
   private update(dt: number, now: number): void {
     for (const r of this.agents) {
-      const speed = r.activity === 'working' ? 0.005 : r.activity === 'arriving' ? 0.007 : 0.002;
+      const walking = r.path.length > 0 && now >= r.walkDelayUntil;
+      const speed = walking ? 0.007 : r.activity === 'working' ? 0.005 : 0.002;
       r.phase = (r.phase + dt * speed) % 1;
+      if (r.activity === 'offline') continue;
 
-      if (r.activity === 'arriving') this.walk(r, dt, now);
-      if (r.activity === 'retiring') this.walkToSleep(r, dt, now);
-      if (r.activity === 'idle') {
-        const cycle = this.reducedMotion ? 0 : Math.floor((now - r.activitySince + r.slot * 4500) / 16000) % 3;
-        const rest = this.restPosition(r.slot);
-        const target = cycle === 1
-          ? { x: 215 + r.slot * 25, y: WORK_TOP + this.rows * STATION_H + 85, facing: 'up' as const }
-          : rest;
-        const dx = target.x - r.x, dy = target.y - r.y;
-        const step = dt * 0.035;
-        r.stroll = Math.abs(dx) + Math.abs(dy) > 1;
-        if (r.stroll) {
-          if (Math.abs(dy) > step) { r.y += Math.sign(dy) * step; r.facing = dy > 0 ? 'down' : 'up'; }
-          else if (Math.abs(dx) > step) { r.y = target.y; r.x += Math.sign(dx) * step; r.facing = dx > 0 ? 'right' : 'left'; }
-          else { r.x = target.x; r.y = target.y; }
-        } else { r.facing = target.facing; }
-        r.leisure = cycle;
-      }
+      this.advance(r, dt, now);
 
-      if (r.activity === 'done' && now - r.activitySince > 4500) {
-        r.activity = 'idle';
-        r.activitySince = now;
-      }
+      if (r.activity === 'done' && now - r.activitySince > 4500) this.setActivity(r.agent.id, 'idle');
     }
   }
 
-  /** Uc asamali yol: once kendi siranin koridoruna, sonra masanin altina, sonra otur. */
-  private walk(r: Runtime, dt: number, now: number): void {
-    // Hepsi ayni anda kapidan cikarsa ust uste biner; sirayla girerler.
-    if (now < r.walkDelayUntil) {
-      r.facing = 'right';
-      return;
-    }
+  /** Rota adimlarini eksen hizali olarak yurur. */
+  private advance(r: Runtime, dt: number, now: number): void {
+    if (!r.path.length || now < r.walkDelayUntil) return;
+    let budget = dt * WALK_SPEED;
 
-    const step = dt * 0.03;
+    while (budget > 0 && r.path.length) {
+      const step = r.path[0];
+      // Geri yuruyuste terk edilen iz noktasi hemen silinir; yol ortasinda
+      // yeni hedef gelirse ajan geldigi yone geri donmez.
+      if (step.kind === 'out' && step.index !== undefined) r.trail.length = Math.min(r.trail.length, step.index + 1);
 
-    if (r.walkStage === 'meeting') {
-      const target = this.meetingPosition(r.slot);
-      const dx = target.x - r.x;
-      const dy = target.y - r.y;
-      if (Math.abs(dx) > step) {
-        r.x += Math.sign(dx) * step;
-        r.facing = dx > 0 ? 'right' : 'left';
-        return;
-      }
-      r.x = target.x;
-      if (Math.abs(dy) > step) {
-        r.y += Math.sign(dy) * step;
-        r.facing = dy > 0 ? 'down' : 'up';
-        return;
-      }
-      r.y = target.y;
-      r.facing = target.facing;
-      r.walkStage = null;
-      r.activity = r.pending ?? 'meeting';
-      r.activitySince = now;
-      return;
-    }
-
-    if (r.walkStage === 'lane') {
-      const laneY = this.laneY(r.slot);
-      const dyLane = laneY - r.y;
-      if (Math.abs(dyLane) > step) {
-        r.y += Math.sign(dyLane) * step;
-        r.facing = dyLane < 0 ? 'up' : 'down';
-        return;
-      }
-      r.y = laneY;
-
-      const targetX = this.seatX(r.slot);
-      const dx = targetX - r.x;
-      if (Math.abs(dx) <= step) {
-        r.x = targetX;
-        r.walkStage = 'seat';
-      } else {
-        r.x += Math.sign(dx) * step;
-        r.facing = dx > 0 ? 'right' : 'left';
-      }
-      return;
-    }
-
-    const targetY = this.seatY(r.slot);
-    const dy = targetY - r.y;
-    if (Math.abs(dy) <= step) {
-      r.y = targetY;
-      r.walkStage = null;
-      r.facing = 'up';
-      r.activity = r.pending ?? 'working';
-      r.activitySince = now;
-    } else {
-      r.y += Math.sign(dy) * step;
-      r.facing = dy < 0 ? 'up' : 'down';
-    }
-  }
-
-  private bedPosition(slot: number): { x: number; y: number } {
-    const col = Math.floor(slot / SLEEP_ROWS);
-    const row = slot % SLEEP_ROWS;
-    return {
-      x: this.workWidth + SLEEP_PADDING + col * SLEEP_CELL_W,
-      y: WALL_H + 42 + row * SLEEP_CELL_H,
-    };
-  }
-
-  /** Once bolme kapisina, sonra yataga yurur. */
-  private walkToSleep(r: Runtime, dt: number, now: number): void {
-    if (r.sleepSlot === undefined) return;
-    const step = dt * 0.03;
-    const move = (targetX: number, targetY: number): boolean => {
-      const dx = targetX - r.x;
-      const dy = targetY - r.y;
-      if (Math.abs(dy) > step) {
-        r.y += Math.sign(dy) * step;
+      const dx = step.x - r.x;
+      const dy = step.y - r.y;
+      if (Math.abs(dy) > 0.001) {
+        const move = Math.min(Math.abs(dy), budget);
+        r.y += Math.sign(dy) * move;
         r.facing = dy < 0 ? 'up' : 'down';
-        return false;
-      }
-      r.y = targetY;
-      if (Math.abs(dx) > step) {
-        r.x += Math.sign(dx) * step;
+        budget -= move;
+      } else if (Math.abs(dx) > 0.001) {
+        const move = Math.min(Math.abs(dx), budget);
+        r.x += Math.sign(dx) * move;
         r.facing = dx < 0 ? 'left' : 'right';
-        return false;
+        budget -= move;
       }
-      r.x = targetX;
-      return true;
-    };
+      if (Math.abs(step.x - r.x) > 0.001 || Math.abs(step.y - r.y) > 0.001) break;
 
-    if (r.walkStage === 'sleep-door') {
-      if (move(this.workWidth + 8, SLEEP_DOOR_Y)) r.walkStage = 'sleep-bed';
-      return;
+      r.x = step.x;
+      r.y = step.y;
+      r.path.shift();
+      if (step.kind === 'out') {
+        if (step.index === 0) r.trail = [];
+      } else if (step.kind === 'lane') {
+        r.trail = [{ x: step.x, y: step.y }];
+      } else {
+        r.trail.push({ x: step.x, y: step.y });
+      }
     }
-    const bed = this.bedPosition(r.sleepSlot);
-    if (move(bed.x + 10, bed.y + 10)) {
+
+    if (!r.path.length) this.arrive(r, now);
+  }
+
+  private arrive(r: Runtime, now: number): void {
+    const seat = this.seatFor(r, r.dest);
+    r.seated = true;
+    r.facing = seat.facing;
+    if (r.dest === 'bed' && r.sleepSlot !== undefined) {
       r.activity = 'sleeping';
-      r.walkStage = null;
       r.activitySince = now;
     }
   }
@@ -703,45 +821,35 @@ export class PixelOffice {
   // --------------------------------------------------------------- cizim
 
   private frameFor(r: Runtime, now: number): { row: number; frame: number; flip: boolean } {
-    const dir = (): { row: number; flip: boolean } => {
-      switch (r.facing) {
-        case 'up':
-          return { row: ROW_UP, flip: false };
-        case 'left':
-          return { row: ROW_RIGHT, flip: true };
-        case 'right':
-          return { row: ROW_RIGHT, flip: false };
-        default:
-          return { row: ROW_DOWN, flip: false };
-      }
-    };
-    const { row, flip } = dir();
+    const row = r.facing === 'up' ? ROW_UP : r.facing === 'down' ? ROW_DOWN : ROW_RIGHT;
+    const flip = r.facing === 'left';
     const tick = Math.floor(r.phase * 8);
-    if (r.activity === 'idle' && r.stroll) return { row, flip, frame: WALK_FRAMES[tick % 4] };
 
+    if (r.path.length) {
+      if (now < r.walkDelayUntil) return { row, flip, frame: 0 };
+      return { row, flip, frame: WALK_FRAMES[tick % WALK_FRAMES.length] };
+    }
+
+    // Oturan karakter yalnizca oturma karelerini kullanir; ayakta durma
+    // karesi koltugun ustunde dikiliyormus gibi gorunuyordu.
     switch (r.activity) {
-      case 'arriving':
-      case 'retiring':
-        return { row, flip, frame: WALK_FRAMES[tick % WALK_FRAMES.length] };
-      case 'reading':
-        return { row, flip, frame: READING_FRAMES[tick % 2] };
-      case 'meeting':
-        return { row, flip, frame: READING_FRAMES[Math.floor(now / 850 + r.slot) % 2] };
-      case 'idle': {
-        // Sprite paketinde ayri idle karesi yok. Koltukta kitap/kahve hissi
-        // icin mevcut el animasyonlarini uzun, sakin araliklarla kullan.
-        const mood = Math.floor(now / 4200 + r.slot) % 4;
-        if (mood === 1) return { row, flip, frame: READING_FRAMES[Math.floor(now / 900) % 2] };
-        if (mood === 3) return { row, flip, frame: TYPING_FRAMES[Math.floor(now / 1200) % 2] };
-        return { row, flip, frame: 0 };
-      }
       case 'working':
         // Cikti akmiyorsa yazmayi birakip ekrana bakar.
         return now - r.lastPulse < 2500
           ? { row, flip, frame: TYPING_FRAMES[tick % 2] }
           : { row, flip, frame: READING_FRAMES[0] };
+      case 'reading':
+      case 'thinking':
+        return { row, flip, frame: READING_FRAMES[Math.floor(now / 700) % 2] };
+      case 'meeting':
+        return { row, flip, frame: READING_FRAMES[Math.floor(now / 850 + r.slot) % 2] };
+      case 'idle': {
+        // Koltukta kitap/telefon: uzun, sakin araliklarla sayfa cevirir.
+        const flick = Math.floor(now / 3600 + r.slot * 0.7) % 3 === 0;
+        return { row, flip, frame: flick ? READING_FRAMES[Math.floor(now / 500) % 2] : READING_FRAMES[0] };
+      }
       default:
-        return { row, flip, frame: 0 };
+        return { row, flip, frame: READING_FRAMES[0] };
     }
   }
 
@@ -751,21 +859,27 @@ export class PixelOffice {
 
     this.drawFloorAndWalls();
     this.drawWallDecor();
-    this.drawLounge();
+    this.drawRugs();
     this.drawSleepWing(now, false);
 
-    for (const r of this.agents) this.drawStation(r, now);
+    const items: Drawable[] = [];
+    this.collectFurniture(items, now);
     for (const r of this.agents) {
-      if (r.activity !== 'offline' && r.activity !== 'sleeping') this.drawAgent(r, now);
+      if (r.activity === 'offline' || r.activity === 'sleeping') continue;
+      // Oturan ve sirti bize donuk karakter, onundeki sandalyenin arkasinda kalir.
+      const sittingUp = r.seated && r.facing === 'up';
+      items.push({ z: r.y + (sittingUp ? 20 : 30), draw: () => this.drawAgent(r, now) });
     }
-    this.drawLoungeForeground();
+    items.sort((a, b) => a.z - b.z);
+    for (const item of items) item.draw();
+
     this.drawSleepWing(now, true);
-    // Etiketler ve balonlar en uste; hicbir mobilya ustunu ortmesin.
+    // Etiketler en uste; hicbir mobilya ustunu ortmesin.
     for (const r of this.agents) {
       if (r.activity !== 'offline' && r.activity !== 'sleeping') this.drawNametag(r);
     }
 
-    // Ara tuvali tam sayi katiyla ekrana bas — pikseller net kalir.
+    // Ara tuvali iki eksende ayni oranla ekrana bas; yumusatma kapali kalir.
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     this.ctx.drawImage(this.buffer, 0, 0, this.canvas.width, this.canvas.height);
   }
@@ -775,7 +889,7 @@ export class PixelOffice {
     const a = this.assets!;
 
     for (let y = WALL_H; y < this.height; y += TILE) {
-      for (let x = 0; x < this.width; x += TILE) ctx.drawImage(a.floor, x, y);
+      for (let x = 0; x < this.workWidth; x += TILE) ctx.drawImage(a.floor, x, y);
     }
 
     ctx.fillStyle = '#2b3038';
@@ -793,24 +907,22 @@ export class PixelOffice {
     ctx.fillRect(6, 0, 1, this.height);
     ctx.fillRect(this.width - 7, 0, 1, this.height);
 
-    if (this.width > this.workWidth) {
-      // Calisma alani ile uyku kanadi arasinda, ortasi kapili bolme.
-      ctx.fillStyle = '#242933';
-      ctx.fillRect(this.workWidth - 3, 0, 6, this.height);
-      ctx.fillStyle = '#a9764c';
-      ctx.fillRect(this.workWidth - 3, SLEEP_DOOR_Y - 5, 6, 38);
-      ctx.fillStyle = '#171b22';
-      ctx.fillRect(this.workWidth - 3, SLEEP_DOOR_Y - 6, 6, 2);
-    }
+    const lane = this.lane();
+    // Calisma alani ile uyku odasi arasinda, koridor hizasinda kapili bolme.
+    ctx.fillStyle = '#242933';
+    ctx.fillRect(this.workWidth - 3, 0, 6, this.height);
+    ctx.fillStyle = '#a9764c';
+    ctx.fillRect(this.workWidth - 3, lane - 2, 6, 34);
+    ctx.fillStyle = '#171b22';
+    ctx.fillRect(this.workWidth - 3, lane - 3, 6, 2);
 
-    // kapi — ajanlar buradan girer
-    const doorY = this.laneY(0) - 6;
+    // giris kapisi, sol duvarda koridor hizasinda
     ctx.fillStyle = '#6b4f38';
-    ctx.fillRect(0, doorY, 6, 34);
+    ctx.fillRect(0, lane - 2, 6, 32);
     ctx.fillStyle = '#8a6743';
-    ctx.fillRect(0, doorY, 6, 2);
+    ctx.fillRect(0, lane - 2, 6, 2);
     ctx.fillStyle = '#c9a86a';
-    ctx.fillRect(4, doorY + 18, 1, 2);
+    ctx.fillRect(4, lane + 14, 1, 2);
   }
 
   /** Duvara asili tablolar, saat ve raflar — oda bos gorunmesin. */
@@ -819,112 +931,146 @@ export class PixelOffice {
     const p = this.assets!.props;
 
     const order = [
-      'BOOKSHELF', 'LARGE_PAINTING', 'CLOCK', 'SMALL_PAINTING',
-      'WHITEBOARD', 'SMALL_PAINTING_2', 'DOUBLE_BOOKSHELF', 'HANGING_PLANT',
+      'WHITEBOARD', 'CLOCK', 'BOOKSHELF', 'LARGE_PAINTING', 'SMALL_PAINTING',
+      'HANGING_PLANT', 'DOUBLE_BOOKSHELF', 'SMALL_PAINTING_2',
     ];
 
-    let x = 18;
+    let x = 22;
     let i = 0;
-    // Duvari genisligi boyunca, aralarinda bosluk birakarak doldur.
     while (x < this.workWidth - 44 && i < order.length * 3) {
       const img = p[order[i % order.length]];
       i++;
       if (!img) continue;
       const y = img.height >= WALL_H ? 0 : Math.floor((WALL_H - img.height) / 2);
       ctx.drawImage(img, x, y);
-      x += img.width + 20;
+      x += img.width + 22;
     }
   }
 
-  /** Alt katta solda planlama masasi, sagda gercek oturma noktali dinlenme alani. */
-  private drawLounge(): void {
+  /** Dinlenme kosesinin halisi: zeminle birlikte, her seyin altinda. */
+  private drawRugs(): void {
     const ctx = this.bctx;
-    const p = this.assets!.props;
-    const top = WORK_TOP + this.rows * STATION_H + 8;
+    const x = this.loungeX() + 2;
+    const y = this.zoneY() + 4;
+    const w = 84;
+    const h = 58;
+    ctx.fillStyle = '#8f4b3a';
+    ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = '#a55a45';
+    ctx.fillRect(x + 2, y + 2, w - 4, h - 4);
+    ctx.fillStyle = '#8f4b3a';
+    ctx.fillRect(x + 5, y + 5, w - 10, h - 10);
+    ctx.fillStyle = '#b3664f';
+    ctx.fillRect(x + 7, y + 7, w - 14, h - 14);
+  }
 
+  /** Masalar, sandalyeler, koltuklar ve bitkiler — taban cizgisiyle birlikte. */
+  private collectFurniture(items: Drawable[], now: number): void {
+    const ctx = this.bctx;
+    const a = this.assets!;
+    const p = a.props;
     const put = (name: string, x: number, y: number) => {
       const img = p[name];
-      if (img) ctx.drawImage(img, Math.round(x), Math.round(y));
+      if (img) items.push({ z: y + img.height, draw: () => ctx.drawImage(img, Math.round(x), Math.round(y)) });
     };
 
-    // PLANLAMA — uc kisilik masa. Toplantida ajanlar bu sandalyelere yurur.
-    drawText(ctx, 'TOPLANTI MASASI', 73, top - 8, '#f4ddae');
-    ctx.fillStyle = '#8a6545';
-    ctx.fillRect(75, top + 10, 82, 58);
-    ctx.fillStyle = '#b58358';
-    ctx.fillRect(77, top + 12, 78, 54);
-    ctx.fillStyle = '#463429';
-    ctx.fillRect(84, top + 25, 64, 37);
-    ctx.fillRect(88, top + 58, 5, 11);
-    ctx.fillRect(139, top + 58, 5, 11);
-    ctx.fillStyle = '#d5a66d';
-    ctx.fillRect(87, top + 27, 58, 26);
-    ctx.fillStyle = '#d7c39b';
-    ctx.fillRect(104, top + 32, 18, 11);
-    ctx.fillStyle = '#efe5c9';
-    ctx.fillRect(106, top + 34, 14, 7);
-    put('CUSHIONED_CHAIR_FRONT', 82, top + 14);
-    put('CUSHIONED_CHAIR_FRONT', 126, top + 14);
-    put('CUSHIONED_CHAIR_BACK', 82, top + 64);
-    put('CUSHIONED_CHAIR_BACK', 126, top + 64);
-    put('CUSHIONED_CHAIR_SIDE', 64, top + 42);
-    const sideChair = p['CUSHIONED_CHAIR_SIDE'];
-    if (sideChair) {
-      ctx.save();
-      ctx.translate(168, top + 42);
-      ctx.scale(-1, 1);
-      ctx.drawImage(sideChair, 0, 0);
-      ctx.restore();
+    // Calisma masalari: masa + bilgisayar bir parca, sandalye onunde ayri parca.
+    for (const r of this.agents) {
+      const desk = this.deskPos(r.slot);
+      items.push({
+        z: desk.y + 32,
+        draw: () => {
+          ctx.drawImage(a.desk, desk.x, desk.y);
+          const typing = r.activity === 'working' && r.seated && now - r.lastPulse < 2500;
+          const pc = typing ? a.pcOn[Math.floor(r.phase * 6) % a.pcOn.length] : a.pcOff;
+          ctx.drawImage(pc, desk.x + (DESK_W - 16) / 2, desk.y - 8);
+        },
+      });
+      const chairX = desk.x + (DESK_W - 16) / 2;
+      const chairY = desk.y + DESK_CHAIR_DY;
+      items.push({ z: chairY + 32, draw: () => ctx.drawImage(a.chair, chairX, chairY) });
     }
 
-    // DINLENME — iki kisilik kanepe ve tek berjer, toplam uc oturma noktasi.
-    const loungeX = this.workWidth - 132;
-    drawText(ctx, 'DINLENME', loungeX + 37, top + 1, '#6b4936');
-    const rugX = loungeX + 8;
-    const rugY = top + 8;
-    const rugW = 116;
-    const rugH = 58;
-    ctx.fillStyle = '#8f4b3a';
-    ctx.fillRect(rugX, rugY, rugW, rugH);
-    ctx.fillStyle = '#a55a45';
-    ctx.fillRect(rugX + 2, rugY + 2, rugW - 4, rugH - 4);
-    ctx.fillStyle = '#8f4b3a';
-    ctx.fillRect(rugX + 5, rugY + 5, rugW - 10, rugH - 10);
-    ctx.fillStyle = '#b3664f';
-    ctx.fillRect(rugX + 7, rugY + 7, rugW - 14, rugH - 14);
+    // Toplanti masasi: ust sirada masaya bakan, alt sirada sirti donuk koltuklar.
+    const t = this.tableRect();
+    for (let k = 0; k < 3; k++) {
+      put('CUSHIONED_CHAIR_FRONT', this.meetChairX(k), this.zoneY());
+      put('CUSHIONED_CHAIR_BACK', this.meetChairX(k), this.meetBottomChairY());
+    }
+    items.push({ z: t.y + t.h, draw: () => this.drawMeetingTable() });
 
-    put('COFFEE_TABLE', loungeX + 44, top + 16);
-    put('COFFEE', loungeX + 53, top + 21);
-    put('SOFA_BACK', loungeX + 30, top + 49);
-    put('CUSHIONED_CHAIR_BACK', loungeX + 78, top + 49);
-    put('SOFA_FRONT', loungeX + 30, top + 10);
-    put('SOFA_SIDE', loungeX + 8, top + 27);
-    put('SOFA_FRONT', 215, top + 86);
-    put('SOFA_FRONT', 259, top + 86);
-    put('COFFEE_TABLE', 237, top + 110);
-    put('LARGE_PLANT', 12, top);
-    put('BIN', 30, top + 46);
-    put('PLANT_2', this.workWidth - 30, top - 2);
-    put('CACTUS', loungeX + 106, top + 34);
+    // Dinlenme kosesi: ustte iki berjer ve kanepe, ortada sehpa, altta kanepe ve berjerler.
+    const bottom = this.loungeBottomY();
+    put('CUSHIONED_CHAIR_FRONT', this.loungeSeatX(0), this.zoneY());
+    put('SOFA_FRONT', this.loungeSeatX(1) - 8, this.zoneY());
+    put('CUSHIONED_CHAIR_FRONT', this.loungeSeatX(2), this.zoneY());
+    put('CUSHIONED_CHAIR_BACK', this.loungeSeatX(0), bottom);
+    put('SOFA_BACK', this.loungeSeatX(1) - 8, bottom);
+    put('CUSHIONED_CHAIR_BACK', this.loungeSeatX(2), bottom);
+    const table = p['COFFEE_TABLE'];
+    const coffee = p['COFFEE'];
+    if (table) {
+      const tx = this.loungeSeatX(1) - 8;
+      const ty = this.zoneY() + 10;
+      items.push({
+        z: ty + table.height,
+        draw: () => {
+          ctx.drawImage(table, tx, ty);
+          if (coffee) ctx.drawImage(coffee, tx + 6, ty + 8);
+        },
+      });
+    }
+
+    // Genis ekranda bolgeler arasi acilan bosluk bitkilerle dolar.
+    const gap = Math.floor((this.workWidth - this.naturalWorkWidth) / 2);
+    if (gap >= 40) {
+      const leftGap = this.meetX() + MEET_W + gap / 2 - 8;
+      const rightGap = this.deskX() + this.cols * STATION_W + gap / 2 - 8;
+      put('PLANT', leftGap, DESK_Y - 4);
+      put('LARGE_PLANT', rightGap - 8, DESK_Y - 6);
+      if (gap >= 96) {
+        put('CACTUS', leftGap, this.zoneY() + 30);
+        put('PLANT_2', rightGap, this.zoneY() + 30);
+      }
+    }
+
+    // Iki masa sirasinda toplanti ve dinlenme bolgeleri asagi kayar; duvar
+    // dibinde kalan alan sunum tahtasi ve bitkilerle dolar. Gecitler bos kalir.
+    if (this.zoneShift() >= 30) {
+      const t = this.tableRect();
+      put('PLANT', this.meetX() + 2, WALL_H + 2);
+      put('WHITEBOARD', t.x + (t.w - 32) / 2, WALL_H + 2);
+      put('PLANT_2', t.x + t.w - 14, WALL_H + 2);
+      put('LARGE_PLANT', this.loungeX() + 2, WALL_H - 6);
+      put('CACTUS', this.loungeX() + 40, WALL_H + 2);
+      put('PLANT', this.loungeX() + 62, WALL_H + 2);
+    }
   }
 
-  /** Koltuk ve masa on kenarlari karakterlerin dizlerini kapatir; oturma hissini verir. */
-  private drawLoungeForeground(): void {
+  /** Alti kisilik toplanti masasi: ust yuzey, on yuz ve bacaklar. */
+  private drawMeetingTable(): void {
     const ctx = this.bctx;
-    const p = this.assets!.props;
-    const top = WORK_TOP + this.rows * STATION_H + 8;
-    const loungeX = this.workWidth - 132;
-
-    const sofa = p['SOFA_BACK'];
-    if (sofa) ctx.drawImage(sofa, 0, 8, 32, 8, loungeX + 30, top + 57, 32, 8);
-    const chair = p['CUSHIONED_CHAIR_BACK'];
-    if (chair) ctx.drawImage(chair, 0, 8, 16, 8, loungeX + 78, top + 57, 16, 8);
-
-    // Toplanti masasinin alt kenari, yan koltuklardaki govdelerin onunde.
-    ctx.fillStyle = '#79543b';
-    ctx.fillRect(84, top + 51, 64, 5);
-    ctx.fillStyle = '#a9764c';
-    ctx.fillRect(87, top + 51, 58, 2);
+    const { x, y, w, h } = this.tableRect();
+    ctx.fillStyle = '#6e4d36';
+    ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = '#b58358';
+    ctx.fillRect(x + 1, y + 1, w - 2, h - 9);
+    ctx.fillStyle = '#c99466';
+    ctx.fillRect(x + 3, y + 3, w - 6, h - 13);
+    // on yuz: derinlik hissi
+    ctx.fillStyle = '#8a6545';
+    ctx.fillRect(x + 1, y + h - 8, w - 2, 5);
+    ctx.fillStyle = '#463429';
+    ctx.fillRect(x + 3, y + h - 3, 3, 3);
+    ctx.fillRect(x + w - 6, y + h - 3, 3, 3);
+    // masadaki kagitlar ve dizustu
+    ctx.fillStyle = '#efe5c9';
+    ctx.fillRect(x + 12, y + 7, 9, 7);
+    ctx.fillRect(x + 58, y + 9, 8, 6);
+    ctx.fillStyle = '#3d4552';
+    ctx.fillRect(x + 32, y + 6, 16, 10);
+    ctx.fillStyle = '#7fb2d6';
+    ctx.fillRect(x + 34, y + 7, 12, 6);
   }
 
   private countdown(retryAt?: number): string {
@@ -936,15 +1082,7 @@ export class PixelOffice {
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   }
 
-  private resetTime(retryAt?: number, retryHint?: string): string {
-    if (retryAt) {
-      const d = new Date(retryAt);
-      return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-    }
-    return fitText((retryHint || 'BILINMIYOR').toUpperCase(), 48);
-  }
-
-  /** Kota dolunca saga eklenen piksel uyku odasi. */
+  /** Kota dolunca ajanlarin yattigi piksel uyku odasi. */
   private drawSleepWing(now: number, foreground: boolean): void {
     const sleeping = this.agents.filter((r) => r.sleepSlot !== undefined);
     const ctx = this.bctx;
@@ -953,18 +1091,16 @@ export class PixelOffice {
     if (!foreground) {
       // Isigi kapali oda: zemini de duvari da calisma alanindan belirgin koyu.
       ctx.fillStyle = '#11182b';
-      ctx.fillRect(roomX, 0, SLEEP_W - 6, this.height);
+      ctx.fillRect(roomX, 0, this.sleepW() - 9, this.height);
       ctx.fillStyle = '#18223a';
-      for (let y = WALL_H; y < this.height; y += TILE) {
-        ctx.fillRect(roomX, y, SLEEP_W - 6, 1);
-      }
+      for (let y = WALL_H; y < this.height; y += TILE) ctx.fillRect(roomX, y, this.sleepW() - 9, 1);
       ctx.fillStyle = '#202d49';
-      ctx.fillRect(roomX, 0, SLEEP_W - 6, WALL_H);
-      drawText(ctx, 'TOKEN UYKU ODASI', this.workWidth + 10, 11, '#b8b4cc');
-      drawText(ctx, 'ISIKLAR KAPALI', this.workWidth + 10, 20, '#62708f');
+      ctx.fillRect(roomX, 0, this.sleepW() - 9, WALL_H);
+      drawText(ctx, L('TOKEN UYKU ODASI', 'TOKEN SLEEP ROOM'), this.workWidth + 10, 11, '#b8b4cc');
+      drawText(ctx, L('ISIKLAR KAPALI', 'LIGHTS OFF'), this.workWidth + 10, 20, '#62708f');
 
       for (let slot = 0; slot < SLEEP_BEDS; slot++) {
-        const bed = this.bedPosition(slot);
+        const bed = this.bedPos(slot);
         ctx.fillStyle = '#33405f';
         ctx.fillRect(bed.x, bed.y + 7, 46, 25);
         ctx.fillStyle = '#465779';
@@ -974,27 +1110,15 @@ export class PixelOffice {
         ctx.fillStyle = '#0d1322';
         ctx.fillRect(bed.x + 3, bed.y + 31, 3, 3);
         ctx.fillRect(bed.x + 40, bed.y + 31, 3, 3);
-        if (!sleeping.some((agent) => agent.sleepSlot === slot)) {
-          drawText(ctx, 'BOS', bed.x + 17, bed.y + 14, '#aaa6ba');
+        if (!sleeping.some((agent) => agent.sleepSlot === slot && agent.activity === 'sleeping')) {
+          drawText(ctx, L('BOS', 'EMPTY'), bed.x + 22, bed.y + 14, '#8e8aa6');
         }
       }
-
-      // Dördüncü hücre yatak değil: gece lambası ve küçük komodin.
-      const nookX = this.workWidth + SLEEP_PADDING + SLEEP_CELL_W + 12;
-      const nookY = WALL_H + 42 + SLEEP_CELL_H + 10;
-      ctx.fillStyle = '#293551';
-      ctx.fillRect(nookX, nookY + 12, 24, 18);
-      ctx.fillStyle = '#3f4d6b';
-      ctx.fillRect(nookX + 2, nookY + 10, 20, 4);
-      ctx.fillStyle = '#766f63';
-      ctx.fillRect(nookX + 10, nookY, 3, 11);
-      ctx.fillStyle = '#7e805f';
-      ctx.fillRect(nookX + 5, nookY, 13, 5);
+      return;
     }
 
     for (const r of sleeping) {
-      const bed = this.bedPosition(r.sleepSlot!);
-      if (!foreground) continue;
+      const bed = this.bedPos(r.sleepSlot!);
 
       if (r.activity === 'sleeping') {
         // Bas soldaki yastikta, ayaklar sagda; yorgan yalnizca govdeyi orter.
@@ -1010,104 +1134,21 @@ export class PixelOffice {
         ctx.fillStyle = 'rgba(255,255,255,0.18)';
         ctx.fillRect(bed.x + 18, bed.y + 8, 25, 2);
 
-        // Uc Z farkli fazlarda yukselir.
-        for (let i = 0; i < 4; i++) {
-          const phase = ((now / 1100) + i * 0.28) % 1;
+        // Z'ler farkli fazlarda yukselir.
+        for (let i = 0; i < 3; i++) {
+          const phase = ((now / 1100) + i * 0.33) % 1;
           ctx.globalAlpha = 1 - phase * 0.65;
-          drawText(ctx, 'Z', bed.x + 29 + i * 5, bed.y + 3 - Math.floor(phase * 8), '#e8df9a');
+          drawText(ctx, 'Z', bed.x + 30 + i * 5, bed.y - 1 - Math.floor(phase * 6), '#e8df9a');
         }
         ctx.globalAlpha = 1;
       }
 
-      ctx.fillStyle = '#202430';
-      ctx.fillRect(bed.x - 3, bed.y - 32, 84, 27);
-      const label = fitText(r.agent.label.toUpperCase(), 76);
-      drawText(ctx, label, bed.x, bed.y - 29, r.agent.color);
-      drawText(ctx, this.countdown(r.retryAt), bed.x, bed.y - 21, '#f3efe6');
-      drawText(ctx, `RESET ${this.resetTime(r.retryAt, r.retryHint)}`, bed.x, bed.y - 13, '#aaa6ba');
+      ctx.fillStyle = 'rgba(18, 20, 28, 0.85)';
+      const boxW = this.tallSleep() ? 52 : 56;
+      ctx.fillRect(bed.x - 4, bed.y - 25, boxW, 19);
+      drawText(ctx, fitText(r.agent.label.toUpperCase(), boxW - 6), bed.x - 1, bed.y - 22, r.agent.color);
+      drawText(ctx, this.countdown(r.retryAt), bed.x - 1, bed.y - 14, '#f3efe6');
     }
-  }
-
-  /** Uyku odasinin sagindaki boslugu model durum panosu olarak kullan. */
-  private drawOpsWing(now: number): void {
-    const ctx = this.bctx;
-    const x = this.workWidth + SLEEP_W;
-    ctx.fillStyle = '#1b2735';
-    ctx.fillRect(x, 0, OPS_W, this.height);
-    ctx.fillStyle = '#26394a';
-    ctx.fillRect(x, 0, OPS_W, WALL_H);
-    ctx.fillStyle = '#0e1720';
-    ctx.fillRect(x, WALL_H - 2, OPS_W, 2);
-    drawText(ctx, 'MODEL KONTROL', x + 12, 11, '#91b3c9');
-    const d = new Date();
-    drawText(ctx, `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`, x + 126, 11, '#c9d9e4');
-
-    ctx.fillStyle = '#101922';
-    ctx.fillRect(x + 12, WALL_H + 12, OPS_W - 24, 61);
-    ctx.fillStyle = '#31485a';
-    ctx.fillRect(x + 14, WALL_H + 14, OPS_W - 28, 57);
-    drawText(ctx, 'AJAN DURUMU', x + 20, WALL_H + 19, '#9cb5c5');
-    this.agents.slice(0, 5).forEach((r, i) => {
-      const y = WALL_H + 30 + i * 9;
-      const status = r.sleepSlot !== undefined
-        ? 'UYKU'
-        : r.activity === 'offline'
-          ? 'KAPALI'
-          : r.activity === 'idle'
-            ? 'MOLA'
-            : r.activity === 'meeting'
-              ? 'PLAN'
-              : 'AKTIF';
-      ctx.fillStyle = r.agent.color;
-      ctx.fillRect(x + 20, y + 1, 3, 3);
-      drawText(ctx, fitText(r.agent.label.toUpperCase(), 62), x + 27, y, '#e0e8ed');
-      drawText(ctx, status, x + 108, y, status === 'UYKU' ? '#8fa1c8' : '#9dc6ad');
-    });
-
-    // Canli telemetri ekrani: dekoratif ama durum degisimini sakin bicimde belli eder.
-    const graphY = WALL_H + 88;
-    ctx.fillStyle = '#0c151e';
-    ctx.fillRect(x + 12, graphY, OPS_W - 24, 52);
-    ctx.strokeStyle = '#294457';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    for (let px = 0; px <= OPS_W - 32; px++) {
-      const py = graphY + 27 + Math.round(Math.sin(px * 0.17 + now / 1800) * 6);
-      if (px === 0) ctx.moveTo(x + 16 + px, py);
-      else ctx.lineTo(x + 16 + px, py);
-    }
-    ctx.stroke();
-    drawText(ctx, 'YEREL TELEMETRI', x + 20, graphY + 7, '#63889f');
-
-    ctx.fillStyle = '#293b49';
-    ctx.fillRect(x + 12, graphY + 65, 48, 36);
-    ctx.fillRect(x + 68, graphY + 65, 48, 36);
-    ctx.fillRect(x + 124, graphY + 65, 40, 36);
-    drawText(ctx, '3 YATAK', x + 18, graphY + 76, '#a8bbc7');
-    drawText(ctx, 'YEREL', x + 78, graphY + 76, '#a8bbc7');
-    drawText(ctx, 'CANLI', x + 130, graphY + 76, '#77b695');
-  }
-
-  /** Masa, bilgisayar ve sandalye. */
-  private drawStation(r: Runtime, now: number): void {
-    const ctx = this.bctx;
-    const a = this.assets!;
-    const sx = this.stationX(r.slot);
-    const sy = this.stationY(r.slot);
-
-    ctx.drawImage(a.desk, sx, sy);
-
-    const pcX = sx + (DESK_W - 16) / 2;
-    const pcY = sy - 8;
-    const typing = r.activity === 'working' && now - r.lastPulse < 2500;
-    if (typing) {
-      const f = Math.floor(r.phase * 6) % a.pcOn.length;
-      ctx.drawImage(a.pcOn[f], pcX, pcY);
-    } else {
-      ctx.drawImage(a.pcOff, pcX, pcY);
-    }
-
-    ctx.drawImage(a.chair, this.seatX(r.slot), sy + CHAIR_DY);
   }
 
   private drawAgent(r: Runtime, now: number): void {
@@ -1121,29 +1162,20 @@ export class PixelOffice {
     const cols = Math.floor(a.chars[r.charIndex].width / CHAR_FRAME_W);
     const col = flip ? cols - 1 - frame : frame;
 
-    const sitOffset = (r.activity === 'idle' && !r.stroll && r.leisure !== 1) || r.activity === 'meeting' ? 6 : 0;
     ctx.drawImage(
       sheet,
       col * CHAR_FRAME_W, row * CHAR_FRAME_H, CHAR_FRAME_W, CHAR_FRAME_H,
-      Math.round(r.x), Math.round(r.y + sitOffset), CHAR_FRAME_W, CHAR_FRAME_H,
+      Math.round(r.x), Math.round(r.y), CHAR_FRAME_W, CHAR_FRAME_H,
     );
-
-    // Sandalye arkaligi oturan karakterin onunde kalir; ayaklar havada gorunmez.
-    if (Math.abs(r.x - this.seatX(r.slot)) < 1 && Math.abs(r.y - this.seatY(r.slot)) < 1) {
-      ctx.drawImage(a.chair, 0, 16, 16, 8,
-        this.seatX(r.slot), this.stationY(r.slot) + CHAIR_DY + 16, 16, 8);
-    }
-
   }
 
   /**
-   * Karakterin basinin ustunde yari saydam, piksel yazili isim etiketi.
-   * Durum ayri bir balon yerine etiketin sagina islenir; masalarin ustunde
-   * dikey bosluk az oldugu icin balon monitorlere biniyordu.
+   * Karakterin basinin ustunde (ya da sirti donuk oturuyorsa koltugunun
+   * altinda) yari saydam, piksel yazili isim etiketi.
    */
   private drawNametag(r: Runtime): void {
     const ctx = this.bctx;
-    const label = fitText(r.agent.label, STATION_W - 22);
+    const label = fitText(r.agent.label, STATION_W - 20);
     const textW = measureText(label);
 
     const status = this.statusGlyph(r);
@@ -1153,9 +1185,17 @@ export class PixelOffice {
     const w = 3 + 3 + 2 + textW + statusW + 3;
     const h = 9;
     const x = Math.round(r.x) + Math.round((CHAR_FRAME_W - w) / 2);
-    const sitOffset = r.activity === 'idle' || r.activity === 'meeting' ? 6 : 0;
-    const idleStagger = r.activity === 'idle' ? (r.slot % 3) * 7 : 0;
-    const y = Math.round(r.y + sitOffset) - h - 4 - idleStagger;
+
+    let y: number;
+    const seat = r.seated && !r.path.length ? this.seatFor(r, r.dest) : null;
+    if (seat?.tagBelow !== undefined) {
+      y = seat.tagBelow;
+    } else {
+      // Sprite icinde kafanin ust kenari: ayakta 2, one bakan oturus 6, arkasi donuk oturus 3.
+      const headTop = !seat ? 2 : seat.facing === 'down' ? 6 : 3;
+      y = Math.round(r.y) + headTop - h - 3 - (seat?.lift ?? 0);
+    }
+    y = Math.max(1, Math.min(this.height - h - 1, y));
 
     // Yari saydam koyu zemin; koseler bir piksel kirpilarak yumusatilir.
     ctx.fillStyle = 'rgba(18, 20, 25, 0.72)';

@@ -1,5 +1,6 @@
 /** Ajan adaptorleri icin ortak surec calistirma yardimcilari. */
 import { spawn } from 'node:child_process';
+import { killTree, resolveLaunch } from '../env';
 import type { AgentId, AgentRunResult, FailureKind } from '../../shared/types';
 
 export interface SpawnOptions {
@@ -31,13 +32,26 @@ export function runProcess(
   args: string[],
   opts: SpawnOptions,
 ): Promise<SpawnResult> {
-  return new Promise((resolve) => {
+  return resolveLaunch(command, args).then((launch) => new Promise<SpawnResult>((resolve) => {
     const startedAt = Date.now();
-    const child = spawn(command, args, {
+    if (opts.signal?.aborted) {
+      resolve({
+        stdout: '', stderr: '', raw: '', exitCode: null,
+        timedOut: false, aborted: true, durationMs: 0,
+      });
+      return;
+    }
+    const child = spawn(launch.command, launch.args, {
       cwd: opts.cwd,
-      env: opts.env ?? process.env,
+      env: { ...(opts.env ?? process.env), ...(launch.env ?? {}) },
       stdio: ['pipe', 'pipe', 'pipe'],
+      shell: launch.shell,
+      windowsHide: true,
     });
+    const stop = () => {
+      killTree(child.pid);
+      setTimeout(() => killTree(child.pid, true), 3000).unref();
+    };
 
     let stdout = '';
     let stderr = '';
@@ -48,14 +62,12 @@ export function runProcess(
 
     const killTimer = setTimeout(() => {
       timedOut = true;
-      child.kill('SIGTERM');
-      setTimeout(() => child.kill('SIGKILL'), 3000).unref();
+      stop();
     }, opts.timeoutMs);
 
     const onAbort = () => {
       aborted = true;
-      child.kill('SIGTERM');
-      setTimeout(() => child.kill('SIGKILL'), 3000).unref();
+      stop();
     };
     opts.signal?.addEventListener('abort', onAbort, { once: true });
 
@@ -73,12 +85,10 @@ export function runProcess(
       opts.onChunk?.(d);
     });
 
-    if (opts.stdin !== undefined) {
-      child.stdin.write(opts.stdin);
-      child.stdin.end();
-    } else {
-      child.stdin.end();
-    }
+    // Kapanmis bir stdin'e yazmak surec hatasi firlatmasin.
+    child.stdin.on('error', () => {});
+    if (opts.stdin !== undefined) child.stdin.end(opts.stdin);
+    else child.stdin.end();
 
     const finish = (exitCode: number | null) => {
       if (settled) return;
@@ -102,7 +112,7 @@ export function runProcess(
       finish(null);
     });
     child.on('close', (code) => finish(code));
-  });
+  }));
 }
 
 export function failure(

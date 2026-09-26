@@ -10,12 +10,22 @@ export type BuiltinAgentId = 'claude' | 'codex' | 'antigravity';
  */
 export type ProviderAgentId = `provider:${string}`;
 
-export type AgentId = BuiltinAgentId | ProviderAgentId;
+/**
+ * Makinede kurulu ek kodlama CLI'lari (Gemini CLI, Cursor Agent, Copilot...)
+ * ya da kullanicinin kendi tanimladigi CLI. Kimlik `cli:<slug>`.
+ */
+export type CliAgentId = `cli:${string}`;
+
+export type AgentId = BuiltinAgentId | ProviderAgentId | CliAgentId;
 
 export const BUILTIN_AGENTS: BuiltinAgentId[] = ['claude', 'codex', 'antigravity'];
 
 export function isProviderAgent(id: AgentId): id is ProviderAgentId {
   return id.startsWith('provider:');
+}
+
+export function isCliAgent(id: string): id is CliAgentId {
+  return id.startsWith('cli:');
 }
 
 export function providerSlug(id: ProviderAgentId): string {
@@ -54,6 +64,10 @@ export interface ProviderConfig {
   costTier?: CostTier;
   /** Istek basina uretim siniri. */
   maxTokens: number;
+  /** Konsey'in bu saglayicida harcayabilecegi gunluk token butcesi (limit). */
+  dailyTokenBudget?: number;
+  /** Limitin yuzde kacinin kullanilabilecegi (1-100). */
+  usageCapPercent?: number;
 }
 
 export type RunPhase =
@@ -69,6 +83,9 @@ export type RunPhase =
   | 'cancelled';
 
 export type TaskComplexity = 'low' | 'medium' | 'high' | 'critical';
+export type RunStrategy = 'fast' | 'expert' | 'council';
+/** Kullanicinin sectigi calisma modu; auto rotayi istege gore Konsey secer. */
+export type RunMode = 'auto' | RunStrategy;
 export type ReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh';
 
 /** Tek bir ajan cagrisinda kullanilacak model politikasi. */
@@ -144,10 +161,30 @@ export interface ReviewOutcome {
   raw: string;
 }
 
+export interface ValidationOutcome {
+  ok: boolean;
+  commands: { command: string; ok: boolean; output: string; durationMs: number }[];
+  summary: string;
+}
+
+export interface AgentUsage {
+  agent: AgentId;
+  role: 'plan' | 'claim' | 'execute' | 'review' | 'repair';
+  model?: string;
+  inputTokens?: number;
+  outputTokens?: number;
+  cachedInputTokens?: number;
+  totalTokens?: number;
+  costUsd?: number;
+  durationMs: number;
+}
+
 export interface RunRecord {
   id: string;
   projectDir: string;
   prompt: string;
+  /** fast=DeepSeek ilk cozum, expert=tek guclu ajan, council=paralel ekip. */
+  strategy: RunStrategy;
   phase: RunPhase;
   startedAt: number;
   endedAt?: number;
@@ -158,8 +195,22 @@ export interface RunRecord {
   claims: ClaimResponse[];
   workspaces: AgentWorkspace[];
   merges: MergeOutcome[];
+  /** Entegrasyon dalinda calistirilan otomatik kalite kontrolleri. */
+  validation?: ValidationOutcome;
+  /** Her model turunun olculebildigi kadariyla kullanim kaydi. */
+  usage: AgentUsage[];
   review?: ReviewOutcome;
   error?: string;
+  /** Planlayicinin tek cumlelik ozeti. */
+  summary?: string;
+  /** Rota seciminin gerekcesi. */
+  routeReason?: string;
+  /** Degisen dosyalarin ozeti (git diff --stat). */
+  diffStat?: string;
+  /** Su an model turu yuruten ajanlar ve rolleri (arayuzde "kim ne yapiyor"). */
+  active?: { agent: AgentId; role: AgentUsage['role']; since: number }[];
+  /** Sonucun kullanicinin proje klasorune uygulanma durumu. */
+  applied?: { ok: boolean; message: string; at: number };
 }
 
 /** Arayuze akan olaylar. */
@@ -178,7 +229,13 @@ export type KonseyEvent =
       retryHint?: string;
     }
   | { type: 'log'; runId: string; agent: AgentId | 'orchestrator'; level: 'info' | 'warn' | 'error'; text: string; at: number }
-  | { type: 'stream'; runId: string; agent: AgentId; chunk: string; at: number };
+  | { type: 'stream'; runId: string; agent: AgentId; chunk: string; at: number }
+  /** Ham ciktidan ayiklanmis, insan okur tek satirlik etkinlik (dosya yazdi, komut calistirdi...). */
+  | { type: 'activity'; runId: string; agent: AgentId; text: string; tone: 'say' | 'tool' | 'think'; at: number; phase?: RunPhase }
+  | { type: 'chat:message'; message: ChatMessage }
+  | { type: 'chat:delta'; id: string; thread: ChatMessage['thread']; text: string }
+  | { type: 'chat:done'; message: ChatMessage }
+  | { type: 'quota:updated'; quotas: AgentQuota[] };
 
 /** Ajan calistirma istegi. */
 export interface AgentRunRequest {
@@ -194,12 +251,14 @@ export interface AgentRunRequest {
   fallbackModels?: string[];
   /** Milisaniye. Asilirsa surec sonlandirilir. */
   timeoutMs: number;
+  /** Sohbet gibi hafif turlar: ek araclar/MCP yuklenmez. */
+  lean?: boolean;
   signal?: AbortSignal;
   onChunk?: (chunk: string) => void;
 }
 
 /** Basarisizligin turu; kota/oturum hatalari calismayi tumden bozmamali. */
-export type FailureKind = 'auth' | 'quota' | 'timeout' | 'cancelled' | 'unavailable' | 'other';
+export type FailureKind = 'auth' | 'quota' | 'capped' | 'timeout' | 'cancelled' | 'unavailable' | 'other';
 
 export interface AgentRunResult {
   agent: AgentId;
@@ -210,10 +269,67 @@ export interface AgentRunResult {
   raw: string;
   exitCode: number | null;
   durationMs: number;
+  usage?: {
+    inputTokens?: number;
+    outputTokens?: number;
+    cachedInputTokens?: number;
+    totalTokens?: number;
+    costUsd?: number;
+  };
   error?: string;
   failureKind?: FailureKind;
   /** Kota hatalarinda, ayristirilabildiyse yeniden denenebilecek zaman. */
   retryHint?: string;
+  /** CLI'nin bildirdigi guncel hesap limiti kullanimi (Claude rate_limit_event). */
+  limits?: UsageWindow[];
+}
+
+/** Bir hesap limit penceresi: 5 saatlik, haftalik ya da Konsey'in gunluk butcesi. */
+export interface UsageWindow {
+  key: 'five_hour' | 'seven_day' | 'daily';
+  label: string;
+  /** 0-100 */
+  usedPercent: number;
+  resetsAt?: number;
+}
+
+/** Ajanin limit durumu ve kullanicinin izin verdigi pay. */
+export interface AgentQuota {
+  agent: AgentId;
+  windows: UsageWindow[];
+  /** Pencerelerin en yuksegi. Bilinmiyorsa null. */
+  usedPercent: number | null;
+  /** Kullanicinin izin verdigi azami kullanim yuzdesi (1-100). */
+  capPercent: number;
+  /** usedPercent >= capPercent: Konsey bu ajani cagirmaz. */
+  capped: boolean;
+  /** Limitin kaynagi: CLI olayi, yerel oturum kaydi ya da Konsey'in kendi sayaci. */
+  source: 'cli' | 'log' | 'local' | 'unknown';
+  /** Olcum zamani. */
+  observedAt?: number;
+  /** Kilit kalkacagi en erken zaman. */
+  unlocksAt?: number;
+}
+
+/** Konsey'in kendi tuttugu kullanim sayaci (bugun ve toplam). */
+export interface AgentUsageTotals {
+  agent: AgentId;
+  today: { calls: number; tokens: number; costUsd: number; durationMs: number };
+  total: { calls: number; tokens: number; costUsd: number; durationMs: number };
+}
+
+/** Sohbet mesaji: Konsey masasi ya da bir ajanla birebir konusma. */
+export interface ChatMessage {
+  id: string;
+  /** 'council' ya da birebir konusulan ajan. */
+  thread: 'council' | AgentId;
+  from: AgentId | 'user' | 'orchestrator';
+  text: string;
+  at: number;
+  /** chat: serbest konusma; run: calisma sirasinda ajanlarin kendi aralarindaki notlari. */
+  kind: 'chat' | 'run' | 'error';
+  runId?: string;
+  pending?: boolean;
 }
 
 export interface AgentAvailability {
@@ -229,6 +345,21 @@ export interface AgentAvailability {
   retryAt?: number;
 }
 
+/** Ek CLI ajaninin nasil calistirilacagi. */
+export interface CliAgentConfig {
+  /** Hazir sablon kimligi (gemini, cursor, copilot...). Yoksa ozel CLI. */
+  preset?: string;
+  /** Ozel CLI: komut adi ya da tam yolu. */
+  command?: string;
+  /**
+   * Ozel CLI: arguman satiri. {prompt} istemin, {model} modelin yeridir.
+   * {prompt} yoksa istem stdin'den verilir.
+   */
+  args?: string;
+  /** Istege bagli model adi. */
+  model?: string;
+}
+
 export interface AgentProfile {
   agent: AgentId;
   label: string;
@@ -237,4 +368,10 @@ export interface AgentProfile {
   enabled: boolean;
   /** Bagil maliyet; gorev dagitiminda ucuz ajanlar oncelenir. */
   costTier?: CostTier;
+  /** Hesap limitinin yuzde kacinin Konsey tarafindan kullanilabilecegi (1-100). */
+  usageCapPercent?: number;
+  /** Limiti bilinmeyen ajanlar icin gunluk tur butcesi (Antigravity, ek CLI'lar). */
+  dailyTurnBudget?: number;
+  /** Ek CLI ajanlari icin calistirma tanimi. */
+  cli?: CliAgentConfig;
 }

@@ -8,6 +8,7 @@
 import * as https from 'node:https';
 import * as http from 'node:http';
 import { URL } from 'node:url';
+import { L } from '../../shared/i18n';
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
@@ -35,7 +36,13 @@ export interface ChatResult {
   content: string;
   toolCalls: any[];
   finishReason: string | null;
-  usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+    prompt_cache_hit_tokens?: number;
+    prompt_cache_miss_tokens?: number;
+  };
   error?: string;
   raw: string;
 }
@@ -84,14 +91,14 @@ export function requestJson(
 
     const onAbort = () => {
       req.destroy();
-      resolve({ status: 0, body: 'Iptal edildi' });
+      resolve({ status: 0, body: L('İptal edildi', 'Cancelled') });
     };
     signal?.addEventListener('abort', onAbort, { once: true });
 
-    req.on('error', (e) => resolve({ status: 0, body: `Baglanti hatasi: ${e.message}` }));
+    req.on('error', (e) => resolve({ status: 0, body: L(`Bağlantı hatası: ${e.message}`, `Connection error: ${e.message}`) }));
     req.setTimeout(timeoutMs, () => {
       req.destroy();
-      resolve({ status: 0, body: 'Zaman asimi' });
+      resolve({ status: 0, body: L('Zaman aşımı', 'Timed out') });
     });
 
     if (data) req.write(data);
@@ -104,12 +111,21 @@ function isTransient(status: number, error?: string): boolean {
   if (status === 429 || status === 502 || status === 503 || status === 504) return true;
   if (status === 0 && error) {
     // TLS/soket duzeyi kesintiler: bazi sunucularda dususuk oranda gorulur.
-    return /EPROTO|ECONNRESET|ETIMEDOUT|EPIPE|socket hang up|packet length|Zaman asimi|Baglanti hatasi/i.test(error);
+    return /EPROTO|ECONNRESET|ETIMEDOUT|EPIPE|socket hang up|packet length|Zaman asimi|Zaman aşımı|Baglanti hatasi|Bağlantı hatası|Timed out|Connection error/i.test(error);
   }
   return false;
 }
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const sleep = (ms: number, signal?: AbortSignal) => new Promise<void>((resolve) => {
+  if (signal?.aborted) return resolve();
+  const timer = setTimeout(done, ms);
+  function done() {
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', done);
+    resolve();
+  }
+  signal?.addEventListener('abort', done, { once: true });
+});
 
 /**
  * Tek bir sohbet cagrisi; gecici hatalarda ustel bekleyisle yeniden dener.
@@ -128,13 +144,13 @@ export async function chat(opts: ChatOptions & { retries?: number }): Promise<Ch
     if (res.ok) return res;
     last = res;
     if (!isTransient(res.status, res.error) || attempt === retries) break;
-    await sleep(Math.min(8000, 800 * 2 ** attempt));
+    await sleep(Math.min(8000, 800 * 2 ** attempt), opts.signal);
   }
 
   return (
     last ?? {
       ok: false, status: 0, content: '', toolCalls: [], finishReason: null,
-      error: 'Istek yapilamadi', raw: '',
+      error: L('İstek yapılamadı', 'Request could not be made'), raw: '',
     }
   );
 }
@@ -175,7 +191,7 @@ async function chatOnce(opts: ChatOptions): Promise<ChatResult> {
       content: '',
       toolCalls: [],
       finishReason: null,
-      error: `JSON ayristirilamadi (HTTP ${status})`,
+      error: L(`JSON ayrıştırılamadı (HTTP ${status})`, `Could not parse JSON (HTTP ${status})`),
       raw: body.slice(0, 2000),
     };
   }
@@ -215,6 +231,6 @@ export async function listModels(
     const models = (parsed.data ?? []).map((m: any) => String(m.id)).filter(Boolean);
     return { ok: true, models };
   } catch {
-    return { ok: false, models: [], error: `Model listesi okunamadi (HTTP ${status})` };
+    return { ok: false, models: [], error: L(`Model listesi okunamadı (HTTP ${status})`, `Could not read the model list (HTTP ${status})`) };
   }
 }

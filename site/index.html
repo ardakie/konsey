@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Konsey — AI coding agents, working together</title>
+<meta name="description" content="Konsey coordinates Claude Code, Codex, Antigravity and other AI coding agents on one project folder. Free, open source, runs locally on macOS and Windows.">
+
+<meta property="og:type" content="website">
+<meta property="og:title" content="Konsey — AI coding agents, working together">
+<meta property="og:description" content="One request, split into tasks, run by isolated AI coding agents in parallel — merged, tested, reviewed, then applied to your project.">
+<meta property="og:image" content="https://ardakie.github.io/konsey/icon.png">
+<meta property="og:url" content="https://ardakie.github.io/konsey/">
+<meta name="twitter:card" content="summary">
+
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<nav class="wrap nav">
+  <a class="nav-brand" href="#">
+    <img src="icon.png" alt="Konsey icon">
+    <span>Konsey</span>
+  </a>
+  <div class="nav-actions">
+    <div class="lang-toggle">
+      <button type="button" data-lang-btn="en">EN</button>
+      <button type="button" data-lang-btn="tr">TR</button>
+    </div>
+    <a class="gh-link" href="https://github.com/ardakie/konsey" target="_blank" rel="noopener">GitHub</a>
+  </div>
+</nav>
+
+<header class="wrap hero">
+  <img class="hero-icon" src="icon.png" alt="Konsey">
+  <h1>Konsey</h1>
+  <p class="tagline" data-i18n="hero.tagline"></p>
+  <p class="pitch" data-i18n="hero.pitch"></p>
+
+  <div class="downloads">
+    <a class="btn btn-primary" id="primary-download" href="https://github.com/ardakie/konsey/releases/latest/download/Konsey-mac-arm64.dmg">
+      <span>
+        <span id="primary-download-label" data-i18n="hero.download.macArm"></span>
+        <span class="btn-sub" id="primary-download-sub" data-i18n="hero.download.recommended"></span>
+      </span>
+    </a>
+    <div class="secondary-downloads">
+      <a class="btn btn-small" id="dl-mac-arm64" href="https://github.com/ardakie/konsey/releases/latest/download/Konsey-mac-arm64.dmg" data-i18n="hero.download.macArmShort"></a>
+      <a class="btn btn-small" id="dl-mac-x64" href="https://github.com/ardakie/konsey/releases/latest/download/Konsey-mac-x64.dmg" data-i18n="hero.download.macIntelShort"></a>
+      <a class="btn btn-small" id="dl-win" href="https://github.com/ardakie/konsey/releases/latest/download/Konsey-windows-x64-setup.exe" data-i18n="hero.download.winShort"></a>
+    </div>
+    <a class="all-releases" href="https://github.com/ardakie/konsey/releases" target="_blank" rel="noopener" data-i18n="hero.download.all"></a>
+  </div>
+</header>
+
+<section id="screenshot">
+  <div class="wrap">
+    <div class="screenshot-frame">
+      <img id="shot-img" src="shot-en.png" alt="Konsey screenshot" loading="lazy"
+           onerror="this.style.display='none';">
+    </div>
+  </div>
+</section>
+
+<section id="how">
+  <div class="wrap">
+    <h2 data-i18n="how.title"></h2>
+    <p class="section-sub" data-i18n="how.sub"></p>
+    <div class="steps">
+      <div class="step">
+        <span class="step-num">1</span>
+        <h3 data-i18n="how.step1.title"></h3>
+        <p data-i18n="how.step1.body"></p>
+      </div>
+      <div class="step">
+        <span class="step-num">2</span>
+        <h3 data-i18n="how.step2.title"></h3>
+        <p data-i18n="how.step2.body"></p>
+      </div>
+      <div class="step">
+        <span class="step-num">3</span>
+        <h3 data-i18n="how.step3.title"></h3>
+        <p data-i18n="how.step3.body"></p>
+      </div>
+      <div class="step">
+        <span class="step-num">4</span>
+        <h3 data-i18n="how.step4.title"></h3>
+        <p data-i18n="how.step4.body"></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="agents">
+  <div class="wrap">
+    <h2 data-i18n="agents.title"></h2>
+    <p class="section-sub" data-i18n="agents.sub"></p>
+    <div class="chips">
+      <span class="chip">Claude Code</span>
+      <span class="chip">OpenAI Codex CLI</span>
+      <span class="chip" data-i18n="agents.antigravity"></span>
+      <span class="chip">Gemini CLI</span>
+      <span class="chip">Cursor Agent</span>
+      <span class="chip">GitHub Copilot CLI</span>
+      <span class="chip">OpenCode</span>
+      <span class="chip">Qwen Code</span>
+      <span class="chip">Amp</span>
+      <span class="chip">Factory Droid</span>
+      <span class="chip">Aider</span>
+      <span class="chip" data-i18n="agents.custom"></span>
+      <span class="chip" data-i18n="agents.apis"></span>
+    </div>
+  </div>
+</section>
+
+<section id="features">
+  <div class="wrap">
+    <h2 data-i18n="features.title"></h2>
+    <div class="features">
+      <div class="feature">
+        <h3 data-i18n="features.parallel.title"></h3>
+        <p data-i18n="features.parallel.body"></p>
+      </div>
+      <div class="feature">
+        <h3 data-i18n="features.cost.title"></h3>
+        <p data-i18n="features.cost.body"></p>
+      </div>
+      <div class="feature">
+        <h3 data-i18n="features.caps.title"></h3>
+        <p data-i18n="features.caps.body"></p>
+      </div>
+      <div class="feature">
+        <h3 data-i18n="features.chat.title"></h3>
+        <p data-i18n="features.chat.body"></p>
+      </div>
+      <div class="feature">
+        <h3 data-i18n="features.office.title"></h3>
+        <p data-i18n="features.office.body"></p>
+      </div>
+      <div class="feature">
+        <h3 data-i18n="features.privacy.title"></h3>
+        <p data-i18n="features.privacy.body"></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="install">
+  <div class="wrap">
+    <h2 data-i18n="install.title"></h2>
+    <p class="section-sub" data-i18n="install.sub"></p>
+    <div class="install-grid">
+      <div class="install-card">
+        <h3 data-i18n="install.mac.title"></h3>
+        <ol>
+          <li data-i18n="install.mac.step1"></li>
+          <li data-i18n="install.mac.step2"></li>
+          <li data-i18n="install.mac.step3"></li>
+        </ol>
+        <div class="warning">
+          <strong data-i18n="install.mac.warningTitle"></strong>
+          <span data-i18n="install.mac.warningBody"></span>
+        </div>
+        <p class="section-sub" style="margin:0 0 10px;text-align:left" data-i18n="install.mac.altLabel"></p>
+        <div class="code-row">
+          <code>curl -fsSL https://ardakie.github.io/konsey/install.sh | bash</code>
+          <button class="copy-btn" type="button" data-copy="curl -fsSL https://ardakie.github.io/konsey/install.sh | bash" data-i18n="install.copy"></button>
+        </div>
+      </div>
+      <div class="install-card">
+        <h3 data-i18n="install.win.title"></h3>
+        <ol>
+          <li data-i18n="install.win.step1"></li>
+          <li data-i18n="install.win.step2"></li>
+          <li data-i18n="install.win.step3"></li>
+        </ol>
+        <div class="warning">
+          <strong data-i18n="install.win.warningTitle"></strong>
+          <span data-i18n="install.win.warningBody"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="requirements" class="requirements">
+  <div class="wrap">
+    <h2 data-i18n="req.title"></h2>
+    <ul>
+      <li data-i18n="req.os"></li>
+      <li data-i18n="req.git"></li>
+      <li data-i18n="req.cli"></li>
+      <li data-i18n="req.node"></li>
+    </ul>
+  </div>
+</section>
+
+<section id="faq">
+  <div class="wrap">
+    <h2 data-i18n="faq.title"></h2>
+    <div class="faq">
+      <details open>
+        <summary data-i18n="faq.q1"></summary>
+        <p data-i18n="faq.a1"></p>
+      </details>
+      <details>
+        <summary data-i18n="faq.q2"></summary>
+        <p data-i18n="faq.a2"></p>
+      </details>
+      <details>
+        <summary data-i18n="faq.q3"></summary>
+        <p data-i18n="faq.a3"></p>
+      </details>
+    </div>
+  </div>
+</section>
+
+<footer class="wrap">
+  <div class="footer-links">
+    <a href="https://github.com/ardakie/konsey" target="_blank" rel="noopener">GitHub</a>
+    <a href="https://github.com/ardakie/konsey/blob/main/LICENSE" target="_blank" rel="noopener" data-i18n="footer.license"></a>
+    <a href="https://github.com/ardakie/konsey/releases" target="_blank" rel="noopener" data-i18n="footer.releases"></a>
+  </div>
+  <div data-i18n="footer.tagline"></div>
+</footer>
+
+<script src="script.js"></script>
+</body>
+</html>

@@ -18,11 +18,20 @@ import { runAgent, agentLabel } from './adapters';
 import { remedyFor, retryHintToTimestamp } from './adapters/failures';
 import { EventBus } from './bus';
 import { extractJson } from './json';
+import { enrichPromptWithImages } from './images';
+import { validateProject } from './validate';
+import { createActivityParser } from './activity';
+import { computeQuotas, recordLimits, recordUsage } from './usage';
 import {
+  applyIntegration,
+  changedFiles,
+  cleanupWorktrees,
+  prepareRepo,
   createWorkspace,
   commitWorkspace,
   currentBranch,
   diffSummary,
+  diffPatch,
   headCommit,
   integrationDir,
   isGitRepo,
@@ -35,9 +44,11 @@ import {
   claimPrompt,
   executionPrompt,
   plannerPrompt,
+  repairPrompt,
   reviewPrompt,
 } from './prompts';
 import { COST_ORDER } from '../shared/types';
+import { L } from '../shared/i18n';
 import type {
   AgentId,
   AgentProfile,
@@ -49,7 +60,10 @@ import type {
   RunRecord,
   Task,
   TaskComplexity,
+  RunStrategy,
+  RunMode,
   ModelSelection,
+  ChatMessage,
 } from '../shared/types';
 
 export interface OrchestratorOptions {
@@ -68,6 +82,12 @@ export interface OrchestratorOptions {
   keepWorktrees?: boolean;
   /** Kullanicinin kendi API anahtariyla ekledigi saglayicilar. */
   providers?: ProviderConfig[];
+  /** Kullanicinin sectigi rota; 'auto' ya da bos ise Konsey secer. */
+  mode?: RunMode;
+  /** Basarili sonuc proje klasorune otomatik uygulansin mi. */
+  autoApply?: boolean;
+  /** Kullanim sinirlari (limitin %X'i) uygulanirken kullanilacak profiller. */
+  quotaProfiles?: AgentProfile[];
   signal?: AbortSignal;
 }
 
@@ -75,6 +95,41 @@ const DEFAULTS = {
   executeTimeoutMs: 25 * 60 * 1000,
   coordinateTimeoutMs: 8 * 60 * 1000,
 };
+
+export interface RouteDecision {
+  strategy: RunStrategy;
+  complexity: TaskComplexity;
+  reason: string;
+}
+
+/**
+ * Ucuzluk degil risk belirleyicidir. Kisa ve geri alinabilir degisiklikler
+ * DeepSeek hizli yoluna; uzmanlik isteyen tek parca isler tek uzmana; farkli
+ * alanlara bolunebilen/riskli isler konseye gider.
+ */
+export function routeRequest(prompt: string): RouteDecision {
+  const request = prompt.split('Ekli görseller (yerel dosya yolları):')[0].trim();
+  const normalized = request.toLocaleLowerCase('tr-TR').normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/ı/g, 'i').replace(/ş/g, 's').replace(/ğ/g, 'g').replace(/ç/g, 'c').replace(/ö/g, 'o').replace(/ü/g, 'u');
+  const critical = /\b(guvenlik|security|kimlik dogrulama|auth|kullanici girisi|giris sistemi|login|session management|oturum yonetimi|odeme|payment|veri kaybi|data loss|migration|migrasyon|sema|schema|concurrency|race condition|sifreleme|encryption)\b/;
+  const architectural = /\b(mimari|architecture|bastan|yeniden tasarla|redesign|donustur|refactor|performans|performance|cok|crash|memory leak|uctan uca|ozellik ekle|ozelligi ekle|sistem kur|entegrasyon|backend|veritabani)\b/;
+  const broadScope = /\b(tum uygulama(?:yi)?|butun proje(?:yi)?|komple uygulama|genel mimari|cok dosya)\b/;
+  const visualJudgement = /\b(gorseldeki|ekran goruntus|isaretledigim|hizalama|yerlesim|tasarima gore)\b/;
+  const separateItems = request.split(/\n\s*[-*]|[.!?]\s+|\b(?:ayrıca|ayrica|bir de|ve sonra)\b/gi)
+    .filter((part) => part.trim().length > 12).length;
+
+  if (critical.test(normalized)) {
+    return { strategy: 'council', complexity: 'critical', reason: L('yüksek riskli güvenlik/veri alanı', 'high-risk security/data area') };
+  }
+  if (broadScope.test(normalized) || (architectural.test(normalized) && (request.length > 280 || separateItems >= 3)) || (separateItems >= 5 && request.length > 700) || request.length > 1400) {
+    return { strategy: 'council', complexity: 'high', reason: L('birden fazla uzmanlık alanına bölünebilen geniş iş', 'broad work splittable across multiple specialties') };
+  }
+  if (architectural.test(normalized) || visualJudgement.test(normalized) || request.length > 650 || (separateItems >= 3 && request.length > 450)) {
+    return { strategy: 'expert', complexity: 'medium', reason: L('tek güçlü ajan ve bağımsız kontrol gerektiren iş', 'work needing one strong agent and independent review') };
+  }
+  return { strategy: 'fast', complexity: 'low', reason: L('dar kapsamlı ve geri alınabilir değişiklik', 'narrow, reversible change') };
+}
 
 /** Yeni Orchestrator nesneleri arasinda (uygulama acik kaldigi surece) kota uykusunu korur. */
 const COOLDOWNS = new Map<AgentId, { reason: string; retryAt?: number; retryHint?: string }>();
@@ -87,6 +142,52 @@ export class Orchestrator {
   private profileIndex = new Map<AgentId, AgentProfile>();
   /** Kota/oturum nedeniyle bu calisma boyunca devre disi kalan ajanlar. */
   private downed = new Map<AgentId, { reason: string; retryAt?: number; retryHint?: string }>();
+  /** Ayni gorevi basarisiz olan ajana geri verip sonsuz devretme dongusunu engeller. */
+  private attempts = new Map<string, Set<AgentId>>();
+  /** Limit payi hesaplamasinda kullanilan profiller (kullanicinin % ayarlari). */
+  private quotaProfiles: AgentProfile[] = [];
+
+  /** Ajanlarin kendi aralarindaki kisa notlari Konsey sohbetine duser. */
+  private say(from: ChatMessage['from'], text: string, kind: ChatMessage['kind'] = 'run') {
+    this.bus.emit({
+      type: 'chat:message',
+      message: {
+        id: randomUUID(),
+        thread: 'council',
+        from,
+        text,
+        at: Date.now(),
+        kind,
+        runId: this.run?.id,
+      },
+    });
+  }
+
+  private label(agent: AgentId): string {
+    return agentLabel(agent, this.providers, [...this.profileIndex.values()]);
+  }
+
+  /** Kullanicinin izin verdigi limit payi dolduysa ajan cagrilmaz. */
+  private async capState(agent: AgentId): Promise<{ capped: boolean; reason: string; unlocksAt?: number }> {
+    if (!this.quotaProfiles.length && !this.providers.length) return { capped: false, reason: '' };
+    try {
+      const quotas = await computeQuotas(this.quotaProfiles, this.providers);
+      this.bus.emit({ type: 'quota:updated', quotas });
+      const quota = quotas.find((q) => q.agent === agent);
+      if (!quota?.capped) return { capped: false, reason: '' };
+      const window = quota.windows.find((w) => w.usedPercent >= quota.capPercent);
+      return {
+        capped: true,
+        reason: L(
+          `${window?.label ?? 'Limit'} kullanımı %${window?.usedPercent ?? quota.usedPercent} — izin verilen pay %${quota.capPercent}`,
+          `${window?.label ?? 'Limit'} usage %${window?.usedPercent ?? quota.usedPercent} — allowed share %${quota.capPercent}`,
+        ),
+        unlocksAt: quota.unlocksAt,
+      };
+    } catch {
+      return { capped: false, reason: '' };
+    }
+  }
 
   private log(agent: AgentId | 'orchestrator', text: string, level: 'info' | 'warn' | 'error' = 'info') {
     this.bus.emit({
@@ -114,13 +215,40 @@ export class Orchestrator {
   private async ask(
     agent: AgentId,
     prompt: string,
-    opts: { cwd: string; allowWrite: boolean; timeoutMs: number; signal?: AbortSignal; selection?: ModelSelection },
+    opts: {
+      cwd: string;
+      allowWrite: boolean;
+      timeoutMs: number;
+      role: 'plan' | 'claim' | 'execute' | 'review' | 'repair';
+      signal?: AbortSignal;
+      selection?: ModelSelection;
+    },
   ): Promise<AgentRunResult> {
     const runId = this.run?.id ?? '-';
+    if (opts.signal?.aborted) {
+      return {
+        agent, ok: false, text: '', raw: '', exitCode: null, durationMs: 0,
+        error: L('Kullanıcı tarafından durduruldu.', 'Stopped by the user.'), failureKind: 'cancelled',
+      };
+    }
+    const cap = await this.capState(agent);
+    if (cap.capped) {
+      return {
+        agent, ok: false, text: '', raw: '', exitCode: null, durationMs: 0,
+        error: L(`Kullanım payı doldu: ${cap.reason}.`, `Usage share full: ${cap.reason}.`), failureKind: 'capped',
+        retryHint: cap.unlocksAt ? new Date(cap.unlocksAt).toISOString() : undefined,
+      };
+    }
     if (opts.selection?.model) {
       this.log(agent, `Model: ${opts.selection.model}${opts.selection.effort ? ` · ${opts.selection.effort}` : ''}`);
     }
-    return runAgent({
+    const parse = createActivityParser(agent);
+    const activeEntry = { agent, role: opts.role, since: Date.now() };
+    if (this.run) {
+      this.run.active = [...(this.run.active ?? []), activeEntry];
+      this.touch();
+    }
+    const result = await runAgent({
       runId,
       agent,
       cwd: opts.cwd,
@@ -129,8 +257,34 @@ export class Orchestrator {
       ...opts.selection,
       timeoutMs: opts.timeoutMs,
       signal: opts.signal,
-      onChunk: (chunk) => this.bus.emit({ type: 'stream', runId, agent, chunk, at: Date.now() }),
-    }, { providers: this.providers });
+      onChunk: (chunk) => {
+        this.bus.emit({ type: 'stream', runId, agent, chunk, at: Date.now() });
+        for (const item of parse(chunk)) {
+          this.bus.emit({ type: 'activity', runId, agent, text: item.text, tone: item.tone, at: Date.now(), phase: this.run?.phase });
+        }
+      },
+    }, { providers: this.providers, profiles: [...this.profileIndex.values()] });
+    if (this.run) {
+      this.run.active = (this.run.active ?? []).filter((entry) => entry !== activeEntry);
+      this.touch();
+    }
+    // Hic calismadan donen (bulunamadi, pay dolu) cagrilar kullanima sayilmaz.
+    if (result.ok || result.usage || result.durationMs > 0) {
+      await recordUsage(agent, {
+        tokens: result.usage?.totalTokens,
+        costUsd: result.usage?.costUsd,
+        durationMs: result.durationMs,
+      }).catch(() => {});
+    }
+    if (result.limits?.length) await recordLimits(agent, result.limits).catch(() => {});
+    this.run?.usage.push({
+      agent,
+      role: opts.role,
+      model: opts.selection?.model,
+      durationMs: result.durationMs,
+      ...result.usage,
+    });
+    return result;
   }
 
   /**
@@ -138,13 +292,25 @@ export class Orchestrator {
    * calismada tekrar denemek anlamsiz. Ajan isaretlenir ve isi dagitilir.
    */
   private noteFailure(agent: AgentId, res: AgentRunResult): boolean {
-    if (!res.failureKind || !['quota', 'auth', 'unavailable', 'timeout'].includes(res.failureKind)) return false;
+    if (!res.failureKind || !['quota', 'capped', 'auth', 'unavailable', 'timeout'].includes(res.failureKind)) return false;
     if (this.downed.has(agent)) return true;
+    if (res.failureKind === 'capped') {
+      const retryAt = res.retryHint ? Date.parse(res.retryHint) || undefined : undefined;
+      const reason = res.error ?? L('Kullanım payı doldu.', 'Usage share is full.');
+      this.downed.set(agent, { reason, retryAt });
+      this.log(agent, L(`Devre dışı — ${reason}`, `Disabled — ${reason}`), 'warn');
+      this.say(agent, L(`${reason} Bu işte beni saymayın, payım bitti.`, `${reason} Don't count on me for this run, my share is used up.`));
+      this.bus.emit({ type: 'agent:status', runId: this.run?.id ?? '-', agent, status: 'sleeping', reason, retryAt });
+      return true;
+    }
     const remedy = remedyFor(agent, res.failureKind, res.retryHint);
     const retryAt = res.failureKind === 'quota' ? retryHintToTimestamp(res.retryHint) : undefined;
     this.downed.set(agent, { reason: remedy, retryAt, retryHint: res.retryHint });
     if (res.failureKind === 'quota') COOLDOWNS.set(agent, { reason: remedy, retryAt, retryHint: res.retryHint });
-    this.log(agent, `Devre disi birakildi — ${remedy}`, 'warn');
+    this.log(agent, L(`Devre dışı bırakıldı — ${remedy}`, `Disabled — ${remedy}`), 'warn');
+    this.say(agent, res.failureKind === 'quota'
+      ? L(`Kotam doldu${res.retryHint ? ` (${res.retryHint})` : ''}. İşimi başka birine devrediyorum.`, `My quota is used up${res.retryHint ? ` (${res.retryHint})` : ''}. Handing my work to someone else.`)
+      : L(`Şu an çalışamıyorum: ${remedy}`, `I can't work right now: ${remedy}`));
     if (res.failureKind === 'quota') {
       this.bus.emit({
         type: 'agent:status', runId: this.run?.id ?? '-', agent, status: 'sleeping',
@@ -176,10 +342,7 @@ export class Orchestrator {
   }
 
   private requestComplexity(prompt: string): TaskComplexity {
-    const hard = /\b(security|guvenlik|mimari|architecture|migration|veri kaybi|data loss|concurrency|odeme|payment|auth)\b/i.test(prompt);
-    if (hard && prompt.length > 500) return 'critical';
-    if (hard || prompt.length > 900) return 'high';
-    return prompt.length > 240 ? 'medium' : 'low';
+    return routeRequest(prompt).complexity;
   }
 
   private healthy(agents: AgentId[]): AgentId[] {
@@ -214,7 +377,9 @@ export class Orchestrator {
   async start(opts: OrchestratorOptions): Promise<RunRecord> {
     const profiles = opts.profiles ?? DEFAULT_PROFILES;
     this.providers = opts.providers ?? [];
+    this.quotaProfiles = opts.quotaProfiles ?? profiles;
     this.downed.clear();
+    this.attempts.clear();
     for (const [agent, state] of COOLDOWNS) {
       if (!state.retryAt || state.retryAt > Date.now()) this.downed.set(agent, state);
       else COOLDOWNS.delete(agent);
@@ -233,6 +398,17 @@ export class Orchestrator {
     const allProfiles = [...profiles, ...providerProfiles];
     this.profileIndex = new Map(allProfiles.map((p) => [p.agent, p]));
 
+    // Kullanicinin izin verdigi limit payini asmis ajanlar bu calismaya hic alinmaz.
+    const cappedAtStart: { agent: AgentId; reason: string; unlocksAt?: number }[] = [];
+    for (const profile of allProfiles) {
+      if (!profile.enabled) continue;
+      const cap = await this.capState(profile.agent);
+      if (cap.capped) {
+        profile.enabled = false;
+        cappedAtStart.push({ agent: profile.agent, reason: cap.reason, unlocksAt: cap.unlocksAt });
+      }
+    }
+
     // Kod yazamayan saglayicilar gorev havuzuna girmez, yalnizca koordinasyon yapar.
     const enabled = allProfiles
       .filter((p) => p.enabled)
@@ -245,15 +421,33 @@ export class Orchestrator {
     const coordinationPool = allProfiles.filter((p) => p.enabled).map((p) => p.agent);
     const execTimeout = opts.executeTimeoutMs ?? DEFAULTS.executeTimeoutMs;
     const coordTimeout = opts.coordinateTimeoutMs ?? DEFAULTS.coordinateTimeoutMs;
-    const overallComplexity = this.requestComplexity(opts.prompt);
+    const autoRoute = routeRequest(opts.prompt);
+    const route: RouteDecision = opts.mode && opts.mode !== 'auto'
+      ? {
+          strategy: opts.mode,
+          complexity: opts.mode === 'fast' ? 'low' : opts.mode === 'expert' ? (autoRoute.complexity === 'low' ? 'medium' : autoRoute.complexity) : (autoRoute.complexity === 'critical' ? 'critical' : 'high'),
+          reason: L('kullanıcı seçimi', 'user selection'),
+        }
+      : autoRoute;
+    const overallComplexity = route.complexity;
+    const preparedPrompt = await enrichPromptWithImages(opts.prompt);
+    const cheapExecutors = enabled.filter((agent) => this.tier(agent) === 'cheap');
+    const effectiveStrategy: RunStrategy = route.strategy === 'fast' && cheapExecutors.length === 0
+      ? 'expert'
+      : route.strategy;
 
     // Basit bir istek icin pahali bir modele plan yaptirmak bosa kota harciyor:
     // kucuk isleri en ucuz koordinator planlasin, agir isler Claude'a kalsin.
+    const configuredCoordinator = opts.coordinator && coordinationPool.includes(opts.coordinator)
+      ? opts.coordinator
+      : null;
     const coordinator =
-      opts.coordinator ??
+      configuredCoordinator ??
       (overallComplexity === 'low'
         ? this.cheapestOf(coordinationPool) ?? coordinationPool[0]
-        : coordinationPool.includes('claude')
+        : overallComplexity === 'medium' && coordinationPool.includes('codex')
+          ? 'codex'
+          : coordinationPool.includes('claude')
           ? 'claude'
           : coordinationPool[0]);
 
@@ -262,6 +456,7 @@ export class Orchestrator {
       id: runId,
       projectDir: opts.projectDir,
       prompt: opts.prompt,
+      strategy: effectiveStrategy,
       phase: 'planning',
       startedAt: Date.now(),
       baseBranch: null,
@@ -271,9 +466,24 @@ export class Orchestrator {
       claims: [],
       workspaces: [],
       merges: [],
+      usage: [],
+      routeReason: route.reason,
     };
     this.run = run;
     this.bus.emit({ type: 'run:started', run: structuredClone(run) });
+    for (const capped of cappedAtStart) {
+      this.log(capped.agent, L(`Bu çalışmada kullanılmıyor — ${capped.reason}.`, `Not used in this run — ${capped.reason}.`), 'warn');
+      this.bus.emit({
+        type: 'agent:status', runId, agent: capped.agent, status: 'sleeping',
+        reason: capped.reason, retryAt: capped.unlocksAt,
+      });
+    }
+    if (cappedAtStart.length) {
+      this.say('orchestrator', L(
+        `${cappedAtStart.map((c) => this.label(c.agent)).join(', ')} kullanım payını doldurduğu için bu işe katılmıyor.`,
+        `${cappedAtStart.map((c) => this.label(c.agent)).join(', ')} isn't joining this run because its usage share is full.`,
+      ));
+    }
     for (const [agent, state] of this.downed) {
       this.bus.emit({
         type: 'agent:status', runId, agent, status: 'sleeping', reason: state.reason,
@@ -282,32 +492,57 @@ export class Orchestrator {
     }
 
     try {
-      if (enabled.length === 0) throw new Error('Etkin ajan yok.');
-      if (!(await isGitRepo(opts.projectDir))) {
-        throw new Error(
-          `${opts.projectDir} bir git deposu degil. Izole calisma icin git gerekli (git init yeterli).`,
-        );
+      if (enabled.length === 0) {
+        throw new Error(cappedAtStart.length
+          ? L('Tüm ajanlar kullanım payını doldurdu. Ayarlardan izin verilen yüzdeyi artırabilirsin.', 'All agents have used up their usage share. You can raise the allowed percentage in settings.')
+          : L('Etkin ajan yok. Soldaki listeden en az bir ajanı aç.', 'No agent is enabled. Turn on at least one agent from the list on the left.'));
+      }
+      // Duz bir klasor secildiyse sessizce git deposuna cevrilir; ajanlar izole calisabilsin.
+      if (!(await isGitRepo(opts.projectDir)) || !(await headCommit(opts.projectDir))) {
+        const prepared = await prepareRepo(opts.projectDir);
+        if (!prepared.ok) throw new Error(prepared.message);
+        this.log('orchestrator', prepared.message);
       }
 
       run.baseBranch = await currentBranch(opts.projectDir);
       run.baseCommit = await headCommit(opts.projectDir);
       if (!run.baseCommit) {
-        throw new Error('Depoda hic commit yok. En az bir commit gerekli.');
+        throw new Error(L('Depoda hiç commit yok. En az bir commit gerekli.', 'The repository has no commits. At least one commit is required.'));
       }
 
       const context = await this.projectContext(opts.projectDir);
+      this.log('orchestrator', L(`Rota: ${effectiveStrategy.toUpperCase()} — ${route.reason}.`, `Route: ${effectiveStrategy.toUpperCase()} — ${route.reason}.`));
 
       // ---------- 1. PLAN ----------
       // Koordinator duserse (kota/oturum) sonraki uygun ajan devralir.
       let activeCoordinator = coordinator;
-      let plan: { summary?: string; tasks?: any[] } | null = null;
-      for (const candidate of [coordinator, ...coordinationPool.filter((a) => a !== coordinator)]) {
+      let plan: { summary?: string; tasks?: any[] } | null = effectiveStrategy === 'fast'
+        ? {
+            summary: L('Hızlı yol: işi tek bir ucuz ajan doğrudan yapar', 'Fast path: a single cheap agent does the work directly'),
+            tasks: [{
+              id: 't1',
+              title: opts.prompt.split('\n')[0].slice(0, 90) || L('Kullanıcı isteğini uygula', "Implement the user's request"),
+              detail: preparedPrompt,
+              scope: [],
+              dependsOn: [],
+              complexity: 'low',
+              requiresVisual: false,
+              suggestedAgent: cheapExecutors[0],
+            }],
+          }
+        : null;
+      if (effectiveStrategy === 'fast') {
+        activeCoordinator = cheapExecutors[0]!;
+        this.log('orchestrator', L(`İşi ilk yakalayan: ${this.label(activeCoordinator)}.`, `First to grab the work: ${this.label(activeCoordinator)}.`));
+      }
+      for (const candidate of plan ? [] : [coordinator, ...coordinationPool.filter((a) => a !== coordinator)]) {
         if (this.downed.has(candidate)) continue;
-        this.log('orchestrator', `Plan hazirlaniyor (${agentLabel(candidate, this.providers)})...`);
-        const res = await this.ask(candidate, plannerPrompt(opts.prompt, allProfiles, context), {
+        this.log('orchestrator', L(`Plan hazırlanıyor (${this.label(candidate)})...`, `Preparing the plan (${this.label(candidate)})...`));
+        const res = await this.ask(candidate, plannerPrompt(preparedPrompt, allProfiles, context), {
           cwd: opts.projectDir,
           allowWrite: false,
           timeoutMs: coordTimeout,
+          role: 'plan',
           signal: opts.signal,
           selection: this.modelFor(candidate, overallComplexity, 'plan'),
         });
@@ -318,17 +553,17 @@ export class Orchestrator {
             plan = parsed;
             break;
           }
-          this.log(candidate, 'Plan JSON olarak okunamadi; siradaki koordinator deneniyor.', 'warn');
+          this.log(candidate, L('Plan JSON olarak okunamadı; sıradaki koordinatör deneniyor.', 'Plan could not be read as JSON; trying the next coordinator.'), 'warn');
           continue;
         }
         this.noteFailure(candidate, res);
-        this.log(candidate, `Planlama basarisiz: ${res.error ?? 'bos cevap'}`, 'warn');
+        this.log(candidate, L(`Planlama başarısız: ${res.error ?? 'boş cevap'}`, `Planning failed: ${res.error ?? 'empty response'}`), 'warn');
       }
-      if (!plan?.tasks?.length) throw new Error('Hicbir ajan gecerli plan uretemedi. Kota ve oturumlari kontrol edin.');
+      if (!plan?.tasks?.length) throw new Error(L('Hiçbir ajan geçerli plan üretemedi. Kota ve oturumları kontrol edin.', 'No agent produced a valid plan. Check quotas and sessions.'));
 
       run.tasks = plan.tasks.map((t, i) => ({
         id: String(t.id ?? `t${i + 1}`),
-        title: String(t.title ?? 'Isimsiz gorev'),
+        title: String(t.title ?? L('İsimsiz görev', 'Untitled task')),
         detail: String(t.detail ?? ''),
         scope: Array.isArray(t.scope) ? t.scope.map(String) : [],
         dependsOn: Array.isArray(t.dependsOn) ? t.dependsOn.map(String) : [],
@@ -340,19 +575,31 @@ export class Orchestrator {
         assignedTo: null,
         status: 'pending',
       }));
-      this.log('orchestrator', `${run.tasks.length} gorev planlandi: ${plan.summary ?? ''}`);
+      run.summary = plan.summary ? String(plan.summary) : undefined;
+      this.log('orchestrator', L(`${run.tasks.length} görev planlandı: ${plan.summary ?? ''}`, `${run.tasks.length} tasks planned: ${plan.summary ?? ''}`));
+      if (effectiveStrategy !== 'fast') {
+        this.say(activeCoordinator, L(`Planı çıkardım: ${run.tasks.length} görev. ${run.summary ?? ''}`, `I made the plan: ${run.tasks.length} tasks. ${run.summary ?? ''}`).trim());
+      }
       this.touch();
 
       // ---------- 2. CLAIM ----------
       this.setPhase('claiming');
-      this.log('orchestrator', 'Ajanlar gorevleri paylasiyor...');
-      const claimants = this.healthy(enabled);
+      this.log('orchestrator', L('Ajanlar görevleri paylaşıyor...', 'Agents are splitting up the tasks...'));
+      const routineOnly = effectiveStrategy === 'fast';
+      const expertOnly = effectiveStrategy === 'expert';
+      const claimants = routineOnly || expertOnly ? [] : this.claimCandidates(run.tasks, enabled, activeCoordinator);
+      if (routineOnly) {
+        this.log('orchestrator', L('Rutin rota: pahalı ajanlara görev talebi gönderilmiyor.', 'Routine route: no task requests are sent to expensive agents.'));
+      } else if (expertOnly) {
+        this.log('orchestrator', L('Uzman rota: konsey kurmadan en uygun güçlü ajan seçiliyor.', 'Expert route: picking the best-fit strong agent without convening the council.'));
+      }
       const claimResults = await Promise.all(
         claimants.map(async (agent): Promise<ClaimResponse> => {
           const res = await this.ask(agent, claimPrompt(agent, run.tasks, context), {
             cwd: opts.projectDir,
             allowWrite: false,
             timeoutMs: coordTimeout,
+            role: 'claim',
             signal: opts.signal,
             selection: this.modelFor(agent, 'low', 'claim'),
           });
@@ -375,7 +622,17 @@ export class Orchestrator {
       );
       run.claims = claimResults;
       for (const c of claimResults) {
-        this.log(c.agent, `Talep: ${c.offers.map((o) => `${o.taskId}(${o.confidence})`).join(', ') || 'yok'}`);
+        this.log(c.agent, L(
+          `Talep: ${c.offers.map((o) => `${o.taskId}(${o.confidence})`).join(', ') || 'yok'}`,
+          `Request: ${c.offers.map((o) => `${o.taskId}(${o.confidence})`).join(', ') || 'none'}`,
+        ));
+        const best = [...c.offers].sort((a, b) => b.confidence - a.confidence)[0];
+        if (best) {
+          const title = run.tasks.find((t) => t.id === best.taskId)?.title ?? best.taskId;
+          this.say(c.agent, L(`"${title}" bende olsun (güven ${best.confidence}). ${best.rationale}`, `Let me take "${title}" (confidence ${best.confidence}). ${best.rationale}`).trim());
+        } else if (c.declines.length) {
+          this.say(c.agent, L(`Bu turda bana uygun görev yok: ${c.declines[0].reason}`, `No task fits me this round: ${c.declines[0].reason}`));
+        }
       }
       this.touch();
 
@@ -391,35 +648,51 @@ export class Orchestrator {
 
       const assignable = this.healthy(enabled);
       if (assignable.length === 0) {
-        throw new Error('Tum ajanlar devre disi (kota/oturum). Calisma yapilamiyor.');
+        throw new Error(L('Tüm ajanlar devre dışı (kota/oturum). Çalışma yapılamıyor.', 'All agents are disabled (quota/session). The run cannot proceed.'));
       }
 
       let arb: { assignments?: any[] } | null = null;
-      for (const candidate of [activeCoordinator, ...coordinationPool.filter((a) => a !== activeCoordinator)]) {
-        if (this.downed.has(candidate)) continue;
-        const arbRes = await this.ask(candidate, arbitrationPrompt(run.tasks, claimsText, allProfiles), {
-          cwd: opts.projectDir, allowWrite: false, timeoutMs: coordTimeout, signal: opts.signal,
-          selection: this.modelFor(candidate, overallComplexity, 'plan'),
-        });
-        const parsed = arbRes.ok ? extractJson<{ assignments?: any[] }>(arbRes.text) : null;
-        if (parsed?.assignments?.length) {
-          arb = parsed;
-          activeCoordinator = candidate;
-          break;
+      if (!routineOnly && !expertOnly) {
+        for (const candidate of [activeCoordinator, ...coordinationPool.filter((a) => a !== activeCoordinator)]) {
+          if (this.downed.has(candidate)) continue;
+          const arbRes = await this.ask(candidate, arbitrationPrompt(run.tasks, claimsText, allProfiles), {
+            cwd: opts.projectDir, allowWrite: false, timeoutMs: coordTimeout, role: 'plan', signal: opts.signal,
+            selection: this.modelFor(candidate, overallComplexity, 'plan'),
+          });
+          const parsed = arbRes.ok ? extractJson<{ assignments?: any[] }>(arbRes.text) : null;
+          if (parsed?.assignments?.length) {
+            arb = parsed;
+            activeCoordinator = candidate;
+            break;
+          }
+          this.noteFailure(candidate, arbRes);
+          this.log(candidate, L('Hakemlik cevabı kullanılamadı; sıradaki ajan deneniyor.', "Arbitration response couldn't be used; trying the next agent."), 'warn');
         }
-        this.noteFailure(candidate, arbRes);
-        this.log(candidate, 'Hakemlik cevabi kullanilamadi; siradaki ajan deneniyor.', 'warn');
       }
 
-      for (const t of run.tasks) {
-        const a = arb?.assignments?.find((x) => String(x.taskId) === t.id);
-        const chosen = a && assignable.includes(a.agent) ? (a.agent as AgentId) : null;
-        t.assignedTo = chosen ?? this.fallbackAssign(t, claimResults, assignable);
-        t.status = 'claimed';
+      if (routineOnly) {
+        this.assignRoutineTasks(run.tasks, assignable);
+      } else if (expertOnly) {
+        this.assignExpertTasks(run.tasks, assignable);
+      } else {
+        for (const t of run.tasks) {
+          const a = arb?.assignments?.find((x) => String(x.taskId) === t.id);
+          const chosen = a && assignable.includes(a.agent) ? (a.agent as AgentId) : null;
+          t.assignedTo = chosen ?? this.fallbackAssign(t, claimResults, assignable);
+          t.status = 'claimed';
+        }
       }
       this.assertBalanced(run.tasks, assignable);
       this.enforceCostPolicy(run.tasks, assignable);
+      this.enforceCapabilityPolicy(run.tasks, assignable);
+      this.enforceDependencyOwnership(run.tasks);
       for (const t of run.tasks) this.log('orchestrator', `${t.id} -> ${t.assignedTo}: ${t.title}`);
+      const byOwner = new Map<AgentId, string[]>();
+      for (const t of run.tasks) if (t.assignedTo) byOwner.set(t.assignedTo, [...(byOwner.get(t.assignedTo) ?? []), t.title]);
+      this.say('orchestrator', L(
+        `Dağıtım: ${[...byOwner].map(([a, titles]) => `${this.label(a)} → ${titles.join(', ')}`).join(' · ')}`,
+        `Assignment: ${[...byOwner].map(([a, titles]) => `${this.label(a)} → ${titles.join(', ')}`).join(' · ')}`,
+      ));
       this.touch();
 
       // ---------- 4. EXECUTE ----------
@@ -432,8 +705,8 @@ export class Orchestrator {
         this.log(
           agent,
           ws.isMainTree
-            ? 'UYARI: izole worktree acilamadi, ana agacta calisilacak.'
-            : `Calisma kopyasi: ${ws.dir} (dal ${ws.branch})`,
+            ? L('UYARI: izole worktree açılamadı, ana ağaçta çalışılacak.', 'WARNING: could not open an isolated worktree; working in the main tree instead.')
+            : L(`Çalışma kopyası: ${ws.dir} (dal ${ws.branch})`, `Working copy: ${ws.dir} (branch ${ws.branch})`),
           ws.isMainTree ? 'warn' : 'info',
         );
       }
@@ -443,26 +716,44 @@ export class Orchestrator {
         working.map((agent) => this.executeAgent(run, agent, runId, execTimeout, opts.signal)),
       );
 
+      if (opts.signal?.aborted) throw new Error(L('Kullanıcı tarafından durduruldu.', 'Stopped by the user.'));
+
       // Kota/oturum nedeniyle dusen ajanlarin isini, gerekirse A -> B -> C
       // seklinde tum saglam adaylar bitene kadar devret.
       while (true) {
+        if (opts.signal?.aborted) throw new Error(L('Kullanıcı tarafından durduruldu.', 'Stopped by the user.'));
         const orphaned = run.tasks.filter(
-          (t) => t.status === 'failed' && t.assignedTo && this.downed.has(t.assignedTo),
+          (t) => t.status === 'failed' && t.assignedTo && (
+            this.downed.has(t.assignedTo) || this.tier(t.assignedTo) === 'cheap'
+          ),
         );
         if (orphaned.length === 0) break;
-        const rescuers = this.healthy(assignable);
+        const attemptedAgents = new Set(orphaned.flatMap((task) => [...(this.attempts.get(task.id) ?? [])]));
+        const rescuers = this.healthy(assignable).filter((agent) => !attemptedAgents.has(agent));
         if (rescuers.length === 0) {
-          this.log('orchestrator', `${orphaned.length} gorev sahipsiz kaldi; devralacak ajan yok.`, 'warn');
+          this.log('orchestrator', L(`${orphaned.length} görev sahipsiz kaldı; devralacak ajan yok.`, `${orphaned.length} task(s) are orphaned; no agent left to take over.`), 'warn');
           break;
         } else {
           this.log(
             'orchestrator',
-            `${orphaned.length} gorev devrediliyor: ${rescuers.map((a) => agentLabel(a, this.providers)).join(', ')}`,
+            L(
+              `${orphaned.length} görev devrediliyor: ${rescuers.map((a) => this.label(a)).join(', ')}`,
+              `Handing off ${orphaned.length} task(s) to: ${rescuers.map((a) => this.label(a)).join(', ')}`,
+            ),
             'warn',
           );
           // Claim guveni ve uzmanlik sirasi korunur; down olan rota secilemez.
           orphaned.forEach((task) => {
-            task.assignedTo = this.fallbackAssign(task, claimResults, rescuers);
+            if (task.assignedTo && this.tier(task.assignedTo) === 'cheap') {
+              const alternateCheap = rescuers.find((agent) => this.tier(agent) === 'cheap');
+              if (alternateCheap) {
+                task.assignedTo = alternateCheap;
+              } else {
+                this.assignExpertTasks([task], rescuers);
+              }
+            } else {
+              task.assignedTo = this.fallbackAssign(task, claimResults, rescuers);
+            }
             task.status = 'claimed';
             task.error = undefined;
           });
@@ -494,27 +785,38 @@ export class Orchestrator {
         this.log(
           m.agent,
           m.status === 'merged'
-            ? 'Birlestirildi.'
+            ? L('Birleştirildi.', 'Merged.')
             : m.status === 'conflict'
-              ? `CATISMA: ${m.conflictFiles.join(', ')}`
-              : `Birlestirme atlandi (${m.status}).`,
+              ? L(`ÇATIŞMA: ${m.conflictFiles.join(', ')}`, `CONFLICT: ${m.conflictFiles.join(', ')}`)
+              : L(`Birleştirme atlandı (${m.status}).`, `Merge skipped (${m.status}).`),
           m.status === 'conflict' ? 'warn' : 'info',
         );
       }
+      this.touch();
+
+      // Model ozetine guvenmeden, projenin kendi test/typecheck komutlarini calistir.
+      const intDir = integrationDir(opts.projectDir, runId);
+      const reviewCwd = existsSync(intDir) ? intDir : opts.projectDir;
+      run.validation = await validateProject(reviewCwd);
+      this.log(
+        'orchestrator',
+        L(`Kalite kapısı: ${run.validation.summary}`, `Quality gate: ${run.validation.summary}`),
+        run.validation.ok ? 'info' : 'error',
+      );
       this.touch();
 
       // ---------- 6. REVIEW ----------
       this.setPhase('reviewing');
       const reviewCandidates = this.healthy(coordinationPool);
       const reviewer =
-        (opts.reviewer && !this.downed.has(opts.reviewer) ? opts.reviewer : null) ??
-        (reviewCandidates.length ? this.pickReviewer(reviewCandidates, run.tasks) : null);
+        (opts.reviewer && reviewCandidates.includes(opts.reviewer) && !this.downed.has(opts.reviewer) ? opts.reviewer : null) ??
+        (reviewCandidates.length
+          ? this.pickReviewer(reviewCandidates, run.tasks, run.validation.ok && run.validation.commands.length > 0)
+          : null);
       if (!reviewer) {
-        this.log('orchestrator', 'Inceleme yapilamadi: tum ajanlar devre disi.', 'warn');
+        this.log('orchestrator', L('İnceleme yapılamadı: tüm ajanlar devre dışı.', 'Review could not be done: all agents are disabled.'), 'warn');
       }
-      const intDir = integrationDir(opts.projectDir, runId);
-      const reviewCwd = existsSync(intDir) ? intDir : opts.projectDir;
-      const stat = await diffSummary(reviewCwd, run.baseCommit);
+      const stat = await this.reviewEvidence(reviewCwd, run.baseCommit);
 
       const summaries = execResults
         .map(({ agent, res }) => `--- ${agent} ---\n${res.text.slice(0, 2500) || '(cevap yok)'}`)
@@ -530,9 +832,9 @@ export class Orchestrator {
         const orderedReviewers = [reviewer, ...reviewCandidates.filter((a) => a !== reviewer)];
         for (const candidate of orderedReviewers) {
           if (this.downed.has(candidate)) continue;
-          this.log('orchestrator', `Inceleme: ${agentLabel(candidate, this.providers)}`);
-          const revRes = await this.ask(candidate, reviewPrompt(run.tasks, stat, summaries, conflictNote), {
-            cwd: reviewCwd, allowWrite: false, timeoutMs: coordTimeout, signal: opts.signal,
+          this.log('orchestrator', L(`İnceleme: ${this.label(candidate)}`, `Review: ${this.label(candidate)}`));
+          const revRes = await this.ask(candidate, reviewPrompt(run.tasks, stat, summaries, conflictNote, run.validation), {
+            cwd: reviewCwd, allowWrite: false, timeoutMs: coordTimeout, role: 'review', signal: opts.signal,
             selection: this.modelFor(candidate, overallComplexity, 'review'),
           });
           const rev = revRes.ok
@@ -546,14 +848,117 @@ export class Orchestrator {
               findings: Array.isArray(rev.findings) ? rev.findings.map(String) : [],
               raw: revRes.text,
             };
+            this.say(candidate, rev.verdict === 'approved'
+              ? L(`İnceledim, onaylıyorum. ${run.review.summary.slice(0, 280)}`, `Reviewed, approving. ${run.review.summary.slice(0, 280)}`)
+              : L(`Düzeltme gerekiyor: ${run.review.findings.slice(0, 2).join(' · ') || run.review.summary.slice(0, 200)}`, `Changes needed: ${run.review.findings.slice(0, 2).join(' · ') || run.review.summary.slice(0, 200)}`));
             break;
           }
           this.noteFailure(candidate, revRes);
-          this.log(candidate, 'Inceleme cevabi kullanilamadi; siradaki ajan deneniyor.', 'warn');
+          this.log(candidate, L('İnceleme cevabı kullanılamadı; sıradaki ajan deneniyor.', "Review response couldn't be used; trying the next agent."), 'warn');
         }
       }
 
-      run.phase = 'done';
+      // Test veya inceleme kirmiziysa bir premium ajan entegrasyon dalinda tek
+      // kontrollu onarim yapar; ardindan test ve bagimsiz inceleme tekrarlanir.
+      if (!run.validation.ok || run.review?.verdict === 'changes-requested') {
+        const fixer = this.pickFixer(this.healthy(enabled), overallComplexity, run.review?.reviewer);
+        if (fixer) {
+          this.log('orchestrator', L(`Kalite onarımı: ${this.label(fixer)}`, `Quality repair: ${this.label(fixer)}`), 'warn');
+          const repair = await this.ask(
+            fixer,
+            repairPrompt(run.tasks, run.review?.findings ?? [], run.validation),
+            {
+              cwd: reviewCwd,
+              allowWrite: true,
+              timeoutMs: execTimeout,
+              role: 'repair',
+              signal: opts.signal,
+              selection: this.modelFor(
+                fixer,
+                overallComplexity === 'critical' ? 'critical' : 'high',
+                'execute',
+              ),
+            },
+          );
+          if (repair.ok) {
+            const committed = await commitWorkspace(
+              { agent: fixer, dir: reviewCwd, branch: run.integrationBranch, isMainTree: false },
+              `Konsey ${runId}: kalite onarimi — ${fixer}`,
+            );
+            if (committed.error) this.log(fixer, L(`Onarım commit uyarısı: ${committed.error}`, `Repair commit warning: ${committed.error}`), 'warn');
+            run.validation = await validateProject(reviewCwd);
+            this.log(
+              'orchestrator',
+              L(`Onarım sonrası kalite kapısı: ${run.validation.summary}`, `Quality gate after repair: ${run.validation.summary}`),
+              run.validation.ok ? 'info' : 'error',
+            );
+
+            const verifyCandidates = this.healthy(reviewCandidates).filter((agent) => agent !== fixer);
+            const verifier = verifyCandidates[0] ?? this.healthy(reviewCandidates)[0];
+            if (verifier) {
+              const newStat = await this.reviewEvidence(reviewCwd, run.baseCommit);
+              const verification = await this.ask(
+                verifier,
+                reviewPrompt(run.tasks, newStat, summaries, conflictNote, run.validation),
+                {
+                  cwd: reviewCwd,
+                  allowWrite: false,
+                  timeoutMs: coordTimeout,
+                  role: 'review',
+                  signal: opts.signal,
+                  selection: this.modelFor(verifier, overallComplexity, 'review'),
+                },
+              );
+              const parsed = verification.ok
+                ? extractJson<{ verdict?: string; summary?: string; findings?: string[] }>(verification.text)
+                : null;
+              if (parsed?.verdict === 'approved' || parsed?.verdict === 'changes-requested') {
+                run.review = {
+                  reviewer: verifier,
+                  verdict: parsed.verdict,
+                  summary: parsed.summary ?? verification.text.slice(0, 1000),
+                  findings: Array.isArray(parsed.findings) ? parsed.findings.map(String) : [],
+                  raw: verification.text,
+                };
+              }
+            }
+          } else {
+            this.noteFailure(fixer, repair);
+            this.log(fixer, L(`Kalite onarımı başarısız: ${repair.error ?? 'boş cevap'}`, `Quality repair failed: ${repair.error ?? 'empty response'}`), 'error');
+          }
+        }
+      }
+
+      const qualityFailed =
+        run.tasks.some((task) => task.status !== 'succeeded') ||
+        run.merges.some((mergeResult) => mergeResult.status === 'conflict' || mergeResult.status === 'failed') ||
+        !run.validation?.ok ||
+        run.review?.verdict === 'changes-requested';
+      run.phase = qualityFailed ? 'failed' : 'done';
+      if (qualityFailed) {
+        run.error = run.tasks.some((task) => task.status !== 'succeeded')
+          ? L('Bir veya daha fazla görev tamamlanamadı; entegrasyon dalı teslim edilmedi.', 'One or more tasks failed to complete; the integration branch was not delivered.')
+          : run.merges.some((mergeResult) => mergeResult.status === 'conflict' || mergeResult.status === 'failed')
+            ? L('Birleştirme çatışması çözülemedi; entegrasyon dalı teslim edilmedi.', 'Merge conflict could not be resolved; the integration branch was not delivered.')
+            : !run.validation?.ok
+              ? L('Otomatik kalite kapısı başarısız; entegrasyon dalı teslim edilmedi.', 'Automated quality gate failed; the integration branch was not delivered.')
+              : L('Kod incelemesi değişiklik istedi; entegrasyon dalı teslim edilmedi.', 'Code review requested changes; the integration branch was not delivered.');
+      }
+      run.diffStat = (await diffSummary(reviewCwd, run.baseCommit)) || undefined;
+      if (!qualityFailed && run.integrationBranch && opts.autoApply !== false) {
+        const files = await changedFiles(opts.projectDir, run.baseCommit, run.integrationBranch);
+        if (files.length) {
+          const applied = await applyIntegration(opts.projectDir, run.integrationBranch);
+          run.applied = { ...applied, at: Date.now() };
+          this.log('orchestrator', applied.message, applied.ok ? 'info' : 'warn');
+        }
+      }
+      if (!opts.keepWorktrees) await cleanupWorktrees(opts.projectDir, run.workspaces, runId).catch(() => {});
+      this.say('orchestrator', qualityFailed
+        ? L(`İş tamamlanamadı: ${run.error}`, `The run could not be completed: ${run.error}`)
+        : run.applied?.ok
+          ? L(`Bitti. ${run.applied.message}`, `Done. ${run.applied.message}`)
+          : L('Bitti. Değişiklikler ayrı dalda hazır.', 'Done. Changes are ready on a separate branch.'));
       run.endedAt = Date.now();
       this.bus.emit({ type: 'run:finished', run: structuredClone(run) });
       return run;
@@ -562,6 +967,10 @@ export class Orchestrator {
       run.error = err instanceof Error ? err.message : String(err);
       run.endedAt = Date.now();
       this.log('orchestrator', run.error, 'error');
+      this.say('orchestrator', run.phase === 'cancelled' ? L('İş durduruldu.', 'Run stopped.') : L(`Hata: ${run.error}`, `Error: ${run.error}`), run.phase === 'cancelled' ? 'run' : 'error');
+      if (!opts.keepWorktrees && run.workspaces.length) {
+        await cleanupWorktrees(opts.projectDir, run.workspaces, runId).catch(() => {});
+      }
       this.bus.emit({ type: 'run:finished', run: structuredClone(run) });
       return run;
     }
@@ -580,7 +989,12 @@ export class Orchestrator {
     signal?: AbortSignal,
     only?: Task[],
   ): Promise<{ agent: AgentId; res: AgentRunResult }> {
-    const mine = (only ?? run.tasks).filter((t) => t.assignedTo === agent);
+    const mine = this.orderTasks((only ?? run.tasks).filter((t) => t.assignedTo === agent));
+    for (const task of mine) {
+      const attempts = this.attempts.get(task.id) ?? new Set<AgentId>();
+      attempts.add(agent);
+      this.attempts.set(task.id, attempts);
+    }
     const ws = run.workspaces.find((w) => w.agent === agent)!;
 
     for (const t of mine) t.status = 'running';
@@ -590,6 +1004,7 @@ export class Orchestrator {
       cwd: ws.dir,
       allowWrite: true,
       timeoutMs,
+      role: 'execute',
       signal,
       selection: this.modelFor(
         agent,
@@ -605,15 +1020,21 @@ export class Orchestrator {
     for (const t of mine) {
       t.status = res.ok ? 'succeeded' : 'failed';
       t.result = res.ok ? res.text.slice(0, 4000) : undefined;
-      t.error = res.ok ? undefined : (res.error ?? 'Bilinmeyen hata');
+      t.error = res.ok ? undefined : (res.error ?? L('Bilinmeyen hata', 'Unknown error'));
     }
     this.log(
       agent,
       res.ok
-        ? `Tamamlandi (${Math.round(res.durationMs / 1000)} sn)`
-        : `Basarisiz: ${res.error}`,
+        ? L(`Tamamlandı (${Math.round(res.durationMs / 1000)} sn)`, `Done (${Math.round(res.durationMs / 1000)}s)`)
+        : L(`Başarısız: ${res.error}`, `Failed: ${res.error}`),
       res.ok ? 'info' : 'error',
     );
+    if (res.ok) {
+      const firstLine = res.text.split('\n').map((l) => l.trim()).find((l) => l.length > 3) ?? '';
+      this.say(agent, L(`${mine.map((t) => t.title).join(', ')} tamam. ${firstLine.slice(0, 220)}`, `${mine.map((t) => t.title).join(', ')} done. ${firstLine.slice(0, 220)}`).trim());
+    } else if (res.failureKind !== 'capped' && res.failureKind !== 'quota') {
+      this.say(agent, L(`Takıldım: ${(res.error ?? 'bilinmeyen hata').slice(0, 200)}`, `I got stuck: ${(res.error ?? 'unknown error').slice(0, 200)}`), 'error');
+    }
     this.touch();
 
     // Kota/timeout aninda yarim kalmis dosyalari entegrasyon dalina tasima.
@@ -622,13 +1043,28 @@ export class Orchestrator {
         ws,
         `Konsey ${runId}: ${agent} — ${mine.map((t) => t.id).join(', ')}`,
       );
-      if (commit.error) this.log(agent, `Commit uyarisi: ${commit.error}`, 'warn');
-      else if (!commit.committed) this.log(agent, 'Degisiklik uretilmedi.', 'warn');
+      if (commit.error) this.log(agent, L(`Commit uyarısı: ${commit.error}`, `Commit warning: ${commit.error}`), 'warn');
+      else if (!commit.committed) {
+        this.log(agent, L('Değişiklik üretilmedi; görev tamamlanmış sayılmayacak.', 'No change was produced; the task will not count as completed.'), 'warn');
+        res.ok = false;
+        res.error = L('Ajan başarılı yanıt verdi fakat dosya değişikliği üretmedi.', 'The agent responded successfully but produced no file changes.');
+        for (const task of mine) {
+          task.status = 'failed';
+          task.error = res.error;
+        }
+        this.touch();
+      }
     } else {
-      this.log(agent, 'Basarisiz turun kismi degisiklikleri commit edilmedi.', 'warn');
+      this.log(agent, L('Başarısız turun kısmi değişiklikleri commit edilmedi.', "The failed round's partial changes were not committed."), 'warn');
     }
 
     return { agent, res };
+  }
+
+  /** Inceleyiciye verilen kanit: degisiklik ozeti ve gercek kod farki. */
+  private async reviewEvidence(dir: string, baseCommit: string): Promise<string> {
+    const [stat, patch] = await Promise.all([diffSummary(dir, baseCommit), diffPatch(dir, baseCommit)]);
+    return patch ? `${stat}\n\nKOD FARKI (git diff):\n${patch}` : stat;
   }
 
   /** Bir ajanin maliyet katmani. Profil yoksa saglayicilar ucuz, abonelikler pahali sayilir. */
@@ -645,6 +1081,120 @@ export class Orchestrator {
     return healthy.reduce((best, a) =>
       COST_ORDER[this.tier(a)] < COST_ORDER[this.tier(best)] ? a : best,
     );
+  }
+
+  /**
+   * Her ajani her istekte konusturmak kalite getirmeden kota yakar. Orta riskte
+   * ucuz/standart adaylar ile tek bir premium uzman yeterlidir; yuksek riskte
+   * tum uzmanlar gorus verebilir. Plani yapan ajan ayni bilgiyi yeniden claim etmez.
+   */
+  private claimCandidates(tasks: Task[], enabled: AgentId[], coordinator: AgentId): AgentId[] {
+    const healthy = this.healthy(enabled);
+    const withoutCoordinator = healthy.filter((agent) => agent !== coordinator);
+    const pool = withoutCoordinator.length ? withoutCoordinator : healthy;
+    const highRisk = tasks.some(
+      (task) => task.requiresVisual || task.complexity === 'high' || task.complexity === 'critical',
+    );
+    if (highRisk) return pool;
+
+    const economical = pool.filter((agent) => this.tier(agent) !== 'premium');
+    const suggestedPremium = pool.find(
+      (agent) => this.tier(agent) === 'premium' && tasks.some((task) => task.suggestedAgent === agent),
+    );
+    const premium = suggestedPremium ?? pool.find((agent) => this.tier(agent) === 'premium');
+    return [...economical, ...(premium ? [premium] : [])];
+  }
+
+  /** Tamamen rutin bir planda ikinci bir model-hakem turu yerine acik ve dengeli rota. */
+  private assignRoutineTasks(tasks: Task[], enabled: AgentId[]): void {
+    const healthy = this.healthy(enabled);
+    const cheap = healthy.filter((agent) => this.tier(agent) === 'cheap');
+    const candidates = cheap.length ? cheap : healthy;
+    if (!candidates.length) return;
+    tasks.forEach((task, index) => {
+      task.assignedTo = candidates[index % candidates.length];
+      task.status = 'claimed';
+    });
+  }
+
+  /** Konsey gerektirmeyen fakat DeepSeek'e birakilmayacak isi tek dogru uzmana ver. */
+  private assignExpertTasks(tasks: Task[], enabled: AgentId[]): void {
+    const candidates = this.healthy(enabled);
+    for (const task of tasks) {
+      const description = `${task.title} ${task.detail}`;
+      let chosen: AgentId | undefined;
+      if (task.requiresVisual && candidates.includes('codex')) {
+        chosen = 'codex';
+      } else if (
+        /\b(frontend|arayüz|arayuz|css|layout|responsive|tarayıcı|tarayici|simulator|ios)\b/i.test(description) &&
+        candidates.includes('antigravity')
+      ) {
+        chosen = 'antigravity';
+      } else if (
+        /\b(mimari|architecture|refactor|iş mantığı|is mantigi|tasarım kararı|tasarim karari)\b/i.test(description) &&
+        candidates.includes('claude')
+      ) {
+        chosen = 'claude';
+      } else if (candidates.includes('codex')) {
+        chosen = 'codex';
+      } else if (task.suggestedAgent && candidates.includes(task.suggestedAgent)) {
+        chosen = task.suggestedAgent;
+      } else {
+        chosen = candidates[0];
+      }
+      task.assignedTo = chosen ?? null;
+      task.status = 'claimed';
+    }
+  }
+
+  /**
+   * Farkli worktree'ler birbirinin henuz birlesmemis sonucunu goremez. Bu nedenle
+   * bagimli gorevleri ayni ajana sabitle; ajan isteminde topolojik sirayla verilirler.
+   */
+  private enforceDependencyOwnership(tasks: Task[]): void {
+    const byId = new Map(tasks.map((task) => [task.id, task]));
+    for (let pass = 0; pass < tasks.length; pass++) {
+      let changed = false;
+      for (const task of tasks) {
+        for (const dependencyId of task.dependsOn) {
+          const dependency = byId.get(dependencyId);
+          if (!dependency?.assignedTo || task.assignedTo === dependency.assignedTo) continue;
+          this.log(
+            'orchestrator',
+            L(
+              `${task.id}, bağımlı olduğu ${dependency.id} ile aynı ajana alındı (${dependency.assignedTo}).`,
+              `${task.id} was moved to the same agent as its dependency ${dependency.id} (${dependency.assignedTo}).`,
+            ),
+          );
+          task.assignedTo = dependency.assignedTo;
+          changed = true;
+        }
+      }
+      if (!changed) break;
+    }
+  }
+
+  private orderTasks(tasks: Task[]): Task[] {
+    const pending = [...tasks];
+    const result: Task[] = [];
+    const ids = new Set(tasks.map((task) => task.id));
+    while (pending.length) {
+      const index = pending.findIndex((task) =>
+        task.dependsOn.filter((id) => ids.has(id)).every((id) => result.some((done) => done.id === id)),
+      );
+      if (index < 0) return [...result, ...pending];
+      result.push(pending.splice(index, 1)[0]);
+    }
+    return result;
+  }
+
+  private pickFixer(enabled: AgentId[], complexity: TaskComplexity, reviewer?: AgentId): AgentId | null {
+    const candidates = enabled.filter((agent) => agent !== reviewer);
+    const premium = candidates.filter((agent) => this.tier(agent) === 'premium');
+    if (complexity === 'critical' && premium.includes('claude')) return 'claude';
+    if (premium.includes('codex')) return 'codex';
+    if (premium.includes('claude')) return 'claude';
+    return candidates.find((agent) => this.tier(agent) === 'standard') ?? candidates[0] ?? reviewer ?? null;
   }
 
   /**
@@ -674,10 +1224,24 @@ export class Orchestrator {
       next++;
       this.log(
         'orchestrator',
-        `${task.id} maliyet kurali geregi ${agentLabel(task.assignedTo, this.providers)} yerine ` +
-          `${agentLabel(target, this.providers)} ajanina verildi (zorluk: low).`,
+        L(
+          `${task.id} maliyet kuralı gereği ${this.label(task.assignedTo)} yerine ` +
+            `${this.label(target)} ajanına verildi (zorluk: low).`,
+          `${task.id} was reassigned from ${this.label(task.assignedTo)} to ` +
+            `${this.label(target)} under the cost rule (complexity: low).`,
+        ),
       );
       task.assignedTo = target;
+    }
+  }
+
+  /** Gorsel aracina ihtiyac duyan gorevleri bu yetenege sahip Codex rotasinda tut. */
+  private enforceCapabilityPolicy(tasks: Task[], assignable: AgentId[]): void {
+    if (!assignable.includes('codex') || this.downed.has('codex')) return;
+    for (const task of tasks) {
+      if (!task.requiresVisual || task.assignedTo === 'codex') continue;
+      this.log('orchestrator', L(`${task.id} görsel üretim yeteneği için Codex ajanına alındı.`, `${task.id} was moved to the Codex agent for its image-generation capability.`));
+      task.assignedTo = 'codex';
     }
   }
 
@@ -721,9 +1285,15 @@ export class Orchestrator {
   }
 
   /** Inceleyici olarak en az gorev ustlenen ajani sec; boylece kendi isini denetlemez. */
-  private pickReviewer(enabled: AgentId[], tasks: Task[]): AgentId {
+  private pickReviewer(enabled: AgentId[], tasks: Task[], validationPassed = true): AgentId {
     const counts = enabled.map((a) => ({ a, n: tasks.filter((t) => t.assignedTo === a).length }));
     counts.sort((x, y) => x.n - y.n);
+
+    // Riskli bir is veya kirmizi kalite kapisi, premium inceleyici gerektirir.
+    if (!validationPassed || tasks.some((t) => t.complexity === 'high' || t.complexity === 'critical')) {
+      const premium = counts.filter((c) => this.tier(c.a) === 'premium');
+      if (premium.length) return premium[0].a;
+    }
 
     // Butun isler basitse incelemeyi de pahali bir aboneliğe yaptirmanin anlami yok:
     // is yapmamis en ucuz ajani sec, yoksa en az yuklu olana dus.

@@ -9,7 +9,9 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { existsSync } from 'node:fs';
+import { rmdir } from 'node:fs/promises';
 import * as path from 'node:path';
+import { L } from '../shared/i18n';
 import type { AgentId, AgentWorkspace, MergeOutcome } from '../shared/types';
 
 const execFileAsync = promisify(execFile);
@@ -65,7 +67,8 @@ export function worktreeRoot(projectDir: string): string {
 }
 
 export function branchName(runId: string, agent: AgentId): string {
-  return `konsey/${runId}/${agent}`;
+  const safeAgent = agent.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '');
+  return `konsey/${runId}/${safeAgent || 'agent'}`;
 }
 
 /**
@@ -79,7 +82,8 @@ export async function createWorkspace(
   baseCommit: string,
 ): Promise<AgentWorkspace> {
   const root = worktreeRoot(projectDir);
-  const dir = path.join(root, `${runId}-${agent}`);
+  const safeAgent = agent.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '');
+  const dir = path.join(root, `${runId}-${safeAgent || 'agent'}`);
   const branch = branchName(runId, agent);
 
   const r = await git(projectDir, ['worktree', 'add', '-b', branch, dir, baseCommit]);
@@ -94,7 +98,7 @@ export async function commitWorkspace(
   ws: AgentWorkspace,
   message: string,
 ): Promise<{ committed: boolean; commit: string | null; error?: string }> {
-  if (ws.isMainTree) return { committed: false, commit: null, error: 'Ana agac; commit atlandi.' };
+  if (ws.isMainTree) return { committed: false, commit: null, error: L('Ana ağaç; commit atlandı.', 'Main tree; commit skipped.') };
 
   const add = await git(ws.dir, ['add', '-A']);
   if (!add.ok) return { committed: false, commit: null, error: add.stderr };
@@ -136,14 +140,14 @@ export async function mergeAll(
 
   const create = await git(projectDir, ['branch', integrationBranch, baseCommit]);
   if (!create.ok) {
-    return { integrationBranch, outcomes, error: `Entegrasyon dali olusturulamadi: ${create.stderr}` };
+    return { integrationBranch, outcomes, error: L(`Entegrasyon dalı oluşturulamadı: ${create.stderr}`, `Could not create the integration branch: ${create.stderr}`) };
   }
 
   // Birlestirme, ana calisma agacini bozmamak icin ayri bir worktree'de yapilir.
   const intDir = path.join(worktreeRoot(projectDir), `${runId}-integration`);
   const add = await git(projectDir, ['worktree', 'add', intDir, integrationBranch]);
   if (!add.ok) {
-    return { integrationBranch, outcomes, error: `Entegrasyon worktree'si acilamadi: ${add.stderr}` };
+    return { integrationBranch, outcomes, error: L(`Entegrasyon worktree'si açılamadı: ${add.stderr}`, `Could not open the integration worktree: ${add.stderr}`) };
   }
 
   for (const ws of workspaces) {
@@ -207,10 +211,86 @@ export async function cleanupWorktrees(
     await git(projectDir, ['worktree', 'remove', '--force', intDir]);
   }
   await git(projectDir, ['worktree', 'prune']);
+  // Bos kalan kardes klasoru de kaldir; masaustunde iz birakmasin.
+  await rmdir(worktreeRoot(projectDir)).catch(() => {});
 }
 
 /** Bir dalin base'e gore ozet diff'i; inceleme turuna girdi olur. */
 export async function diffSummary(dir: string, baseCommit: string): Promise<string> {
   const stat = await git(dir, ['diff', '--stat', `${baseCommit}..HEAD`]);
   return stat.ok ? stat.stdout.trim() : '';
+}
+
+/** Kullanicinin git kimligi yoksa commit'ler bu kimlikle atilir. */
+const IDENTITY = ['-c', 'user.name=Konsey', '-c', 'user.email=konsey@localhost'];
+
+/**
+ * Duz bir klasoru Konsey'e hazirlar: git deposu degilse `git init`, hic commit
+ * yoksa mevcut dosyalarla (bos olsa bile) ilk commit. Ajanlar izole worktree'lerde
+ * calisabilsin diye gereklidir; kullanici icin tek tik ya da otomatik.
+ */
+export async function prepareRepo(dir: string): Promise<{ ok: boolean; created: boolean; message: string }> {
+  let created = false;
+  if (!(await isGitRepo(dir))) {
+    const init = await git(dir, ['init', '-b', 'main']);
+    if (!init.ok) {
+      const legacy = await git(dir, ['init']);
+      if (!legacy.ok) return { ok: false, created, message: L(`git init başarısız: ${legacy.stderr.trim()}`, `git init failed: ${legacy.stderr.trim()}`) };
+    }
+    created = true;
+  }
+  if (!(await headCommit(dir))) {
+    await git(dir, ['add', '-A']);
+    const commit = await git(dir, [
+      ...IDENTITY, 'commit', '--allow-empty', '--no-verify', '-m', 'Konsey: başlangıç',
+    ]);
+    if (!commit.ok) return { ok: false, created, message: L(`İlk commit atılamadı: ${commit.stderr.trim()}`, `Initial commit could not be created: ${commit.stderr.trim()}`) };
+    created = true;
+  }
+  return { ok: true, created, message: created ? L('Klasör git deposu olarak hazırlandı.', 'Folder was set up as a git repository.') : L('Depo hazır.', 'Repository is ready.') };
+}
+
+/**
+ * Entegrasyon dalini kullanicinin calisma agacina uygular. Taban degismediyse
+ * hizli ileri sarma yapilir; degistiyse normal birlestirme denenir, catisma
+ * cikarsa geri alinir ve hic bir sey bozulmaz.
+ */
+export async function applyIntegration(
+  projectDir: string,
+  integrationBranch: string,
+): Promise<{ ok: boolean; message: string }> {
+  const exists = await git(projectDir, ['rev-parse', '--verify', integrationBranch]);
+  if (!exists.ok) return { ok: false, message: L('Entegrasyon dalı bulunamadı.', 'Integration branch not found.') };
+
+  const ff = await git(projectDir, [...IDENTITY, 'merge', '--ff-only', integrationBranch]);
+  if (ff.ok) return { ok: true, message: L('Değişiklikler proje klasörüne uygulandı.', 'Changes were applied to the project folder.') };
+
+  const merge = await git(projectDir, [
+    ...IDENTITY, 'merge', '--no-ff', '--no-verify', '-m', `Konsey: ${integrationBranch} uygulandı`, integrationBranch,
+  ]);
+  if (merge.ok) return { ok: true, message: L('Değişiklikler mevcut çalışmanla birleştirilerek uygulandı.', 'Changes were merged and applied into your current work.') };
+
+  await git(projectDir, ['merge', '--abort']);
+  const reason = `${merge.stderr}\n${ff.stderr}`;
+  if (/would be overwritten|local changes/i.test(reason)) {
+    return { ok: false, message: L('Klasörde kaydedilmemiş değişiklikler aynı dosyalara dokunuyor. Önce onları commit et ya da geri al.', 'Uncommitted changes in the folder touch the same files. Commit or revert them first.') };
+  }
+  return { ok: false, message: L(`Uygulanamadı: ${reason.trim().split('\n')[0] || 'birleştirme çatışması'}`, `Could not apply: ${reason.trim().split('\n')[0] || 'merge conflict'}`) };
+}
+
+/** Degisen dosya listesi (base..dal). */
+export async function changedFiles(dir: string, baseCommit: string, ref = 'HEAD'): Promise<string[]> {
+  const r = await git(dir, ['diff', '--name-only', `${baseCommit}..${ref}`]);
+  return r.ok ? r.stdout.split('\n').map((s) => s.trim()).filter(Boolean) : [];
+}
+
+/**
+ * Inceleyicinin gercek kodu gorebilmesi icin birlesik fark (patch). Yalnizca metin
+ * uretebilen saglayicilar dosya okuyamaz; bu fark onlarin tek kanitidir.
+ */
+export async function diffPatch(dir: string, baseCommit: string, maxChars = 40_000): Promise<string> {
+  const patch = await git(dir, ['diff', '--no-color', '--unified=3', `${baseCommit}..HEAD`]);
+  if (!patch.ok) return '';
+  const text = patch.stdout.trim();
+  return text.length > maxChars ? `${text.slice(0, maxChars)}\n...[fark ${text.length - maxChars} karakter kirpildi]` : text;
 }

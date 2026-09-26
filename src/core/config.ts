@@ -22,6 +22,21 @@ export interface KonseyConfig {
   reviewer: AgentId | null;
   /** Son kullanilan proje dizinleri. */
   recentProjects: string[];
+  /** Basarili is sonucu proje klasorune otomatik uygulansin mi. */
+  autoApply: boolean;
+  /** Kullanicinin listeden kaldirdigi CLI sablonlari; otomatik kesif bunlari geri eklemez. */
+  dismissedClis: string[];
+  /** Arayuz tercihleri. */
+  ui: {
+    theme: 'system' | 'light' | 'dark';
+    mode: 'auto' | 'fast' | 'expert' | 'council';
+    chatOpen: boolean;
+    officeOpen: boolean;
+    /** Arayuz dili; 'system' isletim sisteminin dilini izler. */
+    language: 'system' | 'tr' | 'en';
+    /** "Nasil calisir" tanitimi gosterildi mi. */
+    onboarded: boolean;
+  };
 }
 
 export const DEFAULT_CONFIG: KonseyConfig = {
@@ -30,17 +45,30 @@ export const DEFAULT_CONFIG: KonseyConfig = {
   coordinator: null,
   reviewer: null,
   recentProjects: [],
+  autoApply: true,
+  dismissedClis: [],
+  ui: { theme: 'system', mode: 'auto', chatOpen: true, officeOpen: true, language: 'system', onboarded: false },
 };
+
+/** Kayitli profillerde eksik kalan hazir ajanlari varsayilanlarla tamamlar. */
+function mergeProfiles(saved: AgentProfile[] | undefined): AgentProfile[] {
+  const list = saved?.length ? saved : DEFAULT_PROFILES;
+  const merged = DEFAULT_PROFILES.map((def) => ({ ...def, ...(list.find((p) => p.agent === def.agent) ?? {}) }));
+  return [...merged, ...list.filter((p) => !DEFAULT_PROFILES.some((d) => d.agent === p.agent))];
+}
 
 export async function loadConfig(): Promise<KonseyConfig> {
   try {
     const parsed = JSON.parse(await readFile(FILE, 'utf8')) as Partial<KonseyConfig>;
     return {
-      profiles: parsed.profiles?.length ? parsed.profiles : DEFAULT_PROFILES,
+      profiles: mergeProfiles(parsed.profiles),
       providers: parsed.providers ?? [],
       coordinator: parsed.coordinator ?? null,
       reviewer: parsed.reviewer ?? null,
       recentProjects: parsed.recentProjects ?? [],
+      autoApply: parsed.autoApply ?? true,
+      dismissedClis: parsed.dismissedClis ?? [],
+      ui: { ...DEFAULT_CONFIG.ui, ...(parsed.ui ?? {}) },
     };
   } catch {
     return structuredClone(DEFAULT_CONFIG);
