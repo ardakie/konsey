@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
 import * as path from 'node:path';
 import { L } from '../shared/i18n';
+import { resolveLaunch, which } from './env';
 import type { ValidationOutcome } from '../shared/types';
 
 const execFileAsync = promisify(execFile);
@@ -56,11 +57,15 @@ export async function validateProject(dir: string): Promise<ValidationOutcome> {
   for (const check of checks) {
     const started = Date.now();
     try {
-      const { stdout, stderr } = await execFileAsync(check.bin, check.args, {
+      // Windows'ta npm/pnpm birer .cmd dosyasidir; kabuksuz dogrudan baslatilamaz.
+      const launch = await resolveLaunch((await which(check.bin)) ?? check.bin, check.args);
+      const { stdout, stderr } = await execFileAsync(launch.command, launch.args, {
         cwd: dir,
         timeout: 10 * 60 * 1000,
         maxBuffer: 16 * 1024 * 1024,
-        env: { ...process.env, CI: '1' },
+        env: { ...process.env, CI: '1', ...(launch.env ?? {}) },
+        shell: launch.shell,
+        windowsHide: true,
       });
       commands.push({
         command: check.label,
