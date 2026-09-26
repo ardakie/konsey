@@ -7,9 +7,9 @@
   "scripts": {
     "build:main": "tsc -p tsconfig.json",
     "build:ui": "esbuild ui/renderer.ts --bundle --outfile=dist/ui/renderer.js --platform=browser --format=iife --target=es2022",
-    "copy:ui": "mkdir -p dist/ui && cp ui/index.html dist/ui/index.html && cp ui/styles.css dist/ui/styles.css && rm -rf dist/ui/assets && cp -R ui/pixel/assets dist/ui/assets",
+    "copy:ui": "node scripts/copy-ui.js",
     "build": "npm run build:main && npm run copy:ui && npm run build:ui",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc --noEmit --target ES2022 --module commonjs --moduleResolution node --lib ES2022,DOM ui/renderer.ts ui/devMock.ts ui/preview.ts ui/app/*.ts ui/pixel/office.ts ui/pixel/pixelFont.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.ui.json",
     "test": "npm run build:main && node --test tests/*.test.js",
     "verify": "npm run typecheck && npm test && npm run build",
     "start": "npm run build && electron dist/electron/main.js",
