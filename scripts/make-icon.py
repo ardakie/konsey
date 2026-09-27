@@ -4,7 +4,6 @@ Uygulama simgelerini build/icon-source.jpg'den uretir (Pillow gerekir).
   build/icon.png   1024 px, macOS izgarasi: 824 px yuvarlak kare + saydam kenar
   build/icon.icns  macOS
   build/icon.ico   Windows (16-256 px), kenar boslugu daha az
-  site/icon.png    indirme sitesi icin 512 px
 
 Uretilen dosyalar depoya eklenir; paketleme bu betigi calistirmaz.
 """
@@ -35,8 +34,4 @@ mac.save(ROOT / 'build' / 'icon.icns')
 win = rounded(256, 8, 0.2)
 win.save(ROOT / 'build' / 'icon.ico', sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
 
-site = ROOT / 'site'
-site.mkdir(exist_ok=True)
-rounded(512, 0, 0.2237).save(site / 'icon.png')
-rounded(64, 0, 0.2237).save(site / 'favicon.png')
 print('ok')

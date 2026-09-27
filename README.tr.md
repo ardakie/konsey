@@ -10,9 +10,9 @@ görevlere böler ve her görevi yapabilecek en ucuz ajana verir. Her ajan kendi
 git worktree'sinde çalışır, böylece hiçbiri birbirine karışmaz; sonuçlar birleştirilir,
 test edilir, başka bir ajan tarafından incelenir ve her şey geçerse klasörünüze uygulanır.
 
-[İndir](https://ardakie.github.io/konsey/) · [Sürümler](https://github.com/ardakie/konsey/releases)
+[İndir](https://github.com/ardakie/konsey/releases/latest) · [Sürümler](https://github.com/ardakie/konsey/releases)
 
-![Konsey ekran görüntüsü](site/shot-tr.png)
+![Konsey ekran görüntüsü](docs/screenshot-tr.png)
 
 ## Özellikler
 
@@ -52,7 +52,7 @@ Uyarıyı tamamen atlayan tek satırlık alternatif kurulum (zip'i `curl` ile in
 Gatekeeper'ın kontrol ettiği karantina bayrağını eklemez):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ardakie/konsey/main/site/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ardakie/konsey/main/scripts/install.sh | bash
 ```
 
 ### Windows
@@ -111,8 +111,7 @@ derleyip sürümü yayınlar.
 
 ### Web sitesi
 
-İndirme sitesi düz bir klasördür: `site/`. **Cloudflare Pages**'te yayınlamak için bu depoyu bağlayın ve
-*Framework preset:* None, *Build command:* (boş), *Build output directory:* `site` seçin. Site ayrıca `.github/workflows/pages.yml` ile GitHub Pages'e de yüklenir.
+İndirme sitesi ayrı bir depoda durur ve Cloudflare Pages ile yayınlanır.
 
 ## Veri konumları
 

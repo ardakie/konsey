@@ -10,9 +10,9 @@ tasks, and hands each task to the cheapest agent that can do it. Every agent wor
 own isolated git worktree so they never collide; results are merged, tested, reviewed by
 another agent, and — if everything passes — applied to your folder.
 
-[Download](https://ardakie.github.io/konsey/) · [Releases](https://github.com/ardakie/konsey/releases)
+[Download](https://github.com/ardakie/konsey/releases/latest) · [Releases](https://github.com/ardakie/konsey/releases)
 
-![Konsey screenshot](site/shot-en.png)
+![Konsey screenshot](docs/screenshot-en.png)
 
 ## Features
 
@@ -51,7 +51,7 @@ Alternative one-line install that skips the warning entirely (downloads the zip 
 `curl`, which doesn't add the quarantine flag that Gatekeeper checks):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ardakie/konsey/main/site/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ardakie/konsey/main/scripts/install.sh | bash
 ```
 
 ### Windows
@@ -108,8 +108,7 @@ the release.
 
 ### Website
 
-The download site is a static folder: `site/`. To publish it on **Cloudflare Pages**, connect this repository and use
-*Framework preset:* None, *Build command:* (empty), *Build output directory:* `site`. It is also deployed to GitHub Pages by `.github/workflows/pages.yml`.
+The download site lives in a separate repository and is published with Cloudflare Pages.
 
 ## Data locations
 

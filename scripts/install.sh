@@ -7,7 +7,7 @@
 # (curl-downloaded files are not quarantined the way browser downloads are).
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/ardakie/konsey/main/site/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/ardakie/konsey/main/scripts/install.sh | bash
 
 set -euo pipefail
 
