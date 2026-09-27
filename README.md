@@ -10,7 +10,7 @@ tasks, and hands each task to the cheapest agent that can do it. Every agent wor
 own isolated git worktree so they never collide; results are merged, tested, reviewed by
 another agent, and — if everything passes — applied to your folder.
 
-[Download](https://github.com/ardakie/konsey/releases/latest) · [Releases](https://github.com/ardakie/konsey/releases)
+[Download](https://github.com/ardakie/konsey/releases/latest) · [Releases](https://github.com/ardakie/konsey/releases) · [Code signing policy](#code-signing-policy)
 
 ![Konsey screenshot](docs/screenshot-en.png)
 
@@ -121,6 +121,38 @@ The download site lives in a separate repository and is published with Cloudflar
 | `~/.konsey/runs/` | Task run history. |
 | `~/.konsey/chats/` | Council and one-on-one chat history. |
 | Secrets | macOS: Keychain (`konsey-provider` service). Windows/Linux: `~/.konsey/secrets.json`, encrypted with Electron `safeStorage` (DPAPI on Windows). |
+
+## Code signing policy
+
+Windows builds are signed through GitHub Actions. Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org).
+
+- Committers and reviewers: [@ardakie](https://github.com/ardakie)
+- Approvers: [@ardakie](https://github.com/ardakie)
+
+Every signed binary is built by the [release workflow](.github/workflows/release.yml) from a tagged commit in this repository, and each signing request is approved manually.
+
+## Privacy policy
+
+This program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it.
+
+- Your prompts and project files are sent only to the AI services and integrations **you** connect (for example Claude Code, Codex, an OpenAI-compatible API, GitHub or Sentry). Their own privacy policies apply to that data.
+- On launch Konsey reads the latest version number from the GitHub API to tell you about updates. No personal data is sent; you can turn this off in Settings → General.
+- Konsey has no servers, no accounts and no telemetry.
+
+## System changes
+
+Konsey only changes things you ask for or that it tells you about:
+
+- It prepares the project folder you pick as a git repository and creates task copies (git worktrees) in a `.konsey-worktrees-<name>` folder next to it; they are removed when a task ends.
+- It keeps its settings, run history and chats in `~/.konsey`.
+- With Antigravity (macOS), it adds project records for your folders in `~/.gemini/config/projects`, the same records Antigravity creates itself.
+- Installing an agent CLI or signing in always happens in a Terminal window you can see, after you press the button.
+
+## Uninstall
+
+- **macOS:** quit Konsey and move `/Applications/Konsey.app` to the Trash.
+- **Windows:** Settings → Apps → Installed apps → Konsey → Uninstall.
+- To remove its data as well, delete the `~/.konsey` folder (on Windows `%USERPROFILE%\.konsey`). On macOS, API keys are removed from the Keychain when you delete a provider in Settings, or with Keychain Access (items named `konsey-provider` / `integration:*`).
 
 ## License
 

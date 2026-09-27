@@ -261,7 +261,7 @@ document.addEventListener('keydown', (event) => {
   }).catch(() => {});
 
   // Yeni surum varsa kenar cubugunda indirme baglantisi gorunur.
-  if (isDesktop) {
+  if (isDesktop && state.config.ui.updateCheck !== false) {
     void api.checkUpdate().then((info) => {
       if (!info.available || !info.latest) return;
       $('update-text').textContent = L(`Yeni sürüm ${info.latest} · İndir`, `New version ${info.latest} · Download`);

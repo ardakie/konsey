@@ -388,6 +388,20 @@ function generalTab(body: HTMLElement): void {
     },
   });
 
+  const updateCheck = h('button', {
+    class: 'switch',
+    type: 'button',
+    role: 'switch',
+    'aria-checked': String(state.config.ui.updateCheck !== false),
+    on: {
+      click: () => {
+        state.config.ui.updateCheck = state.config.ui.updateCheck === false;
+        void saveConfig();
+        invalidate('settings');
+      },
+    },
+  });
+
   const themes: { key: 'system' | 'light' | 'dark'; label: string }[] = [
     { key: 'system', label: L('Sistem', 'System') },
     { key: 'light', label: L('Açık', 'Light') },
@@ -444,6 +458,15 @@ function generalTab(body: HTMLElement): void {
           h('div', { class: 'set-card-sub' }, L('Testler ve inceleme geçince ajanların işi doğrudan proje klasörüne işlenir. Kapalıysa ayrı dalda bekler, “Klasöre uygula” ile alırsın.', 'Once tests and review pass, the agents’ work is applied straight to the project folder. If off, it waits on a separate branch — use “Apply to folder” to pull it in.')),
         ),
         autoApply,
+      ),
+    ),
+    h('div', { class: 'set-card' },
+      h('div', { class: 'row-between' },
+        h('div', null,
+          h('div', { class: 'set-card-title' }, L('Yeni sürümleri denetle', 'Check for new versions')),
+          h('div', { class: 'set-card-sub' }, L('Açılışta GitHub’dan yalnızca son sürüm numarası okunur; hiçbir kişisel veri gönderilmez.', 'On launch Konsey reads only the latest version number from GitHub; no personal data is sent.')),
+        ),
+        updateCheck,
       ),
     ),
     h('div', { class: 'set-card' },

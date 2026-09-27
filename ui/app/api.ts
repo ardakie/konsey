@@ -34,6 +34,7 @@ export interface KonseyConfig {
     officeOpen?: boolean;
     language?: 'system' | 'tr' | 'en';
     onboarded?: boolean;
+    updateCheck?: boolean;
   };
 }
 

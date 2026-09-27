@@ -10,7 +10,7 @@ görevlere böler ve her görevi yapabilecek en ucuz ajana verir. Her ajan kendi
 git worktree'sinde çalışır, böylece hiçbiri birbirine karışmaz; sonuçlar birleştirilir,
 test edilir, başka bir ajan tarafından incelenir ve her şey geçerse klasörünüze uygulanır.
 
-[İndir](https://github.com/ardakie/konsey/releases/latest) · [Sürümler](https://github.com/ardakie/konsey/releases)
+[İndir](https://github.com/ardakie/konsey/releases/latest) · [Sürümler](https://github.com/ardakie/konsey/releases) · [Kod imzalama politikası](#kod-imzalama-politikası-code-signing-policy)
 
 ![Konsey ekran görüntüsü](docs/screenshot-tr.png)
 
@@ -124,6 +124,38 @@ derleyip sürümü yayınlar.
 | `~/.konsey/runs/` | Görev çalışma geçmişi. |
 | `~/.konsey/chats/` | Konsey masası ve birebir sohbet geçmişi. |
 | Anahtarlar | macOS: Keychain (`konsey-provider` servisi). Windows/Linux: `~/.konsey/secrets.json`, Electron `safeStorage` ile şifrelenir (Windows'ta DPAPI). |
+
+## Kod imzalama politikası (Code signing policy)
+
+Windows sürümleri GitHub Actions üzerinden imzalanır. Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org).
+
+- Commit yetkisi olanlar ve inceleyenler: [@ardakie](https://github.com/ardakie)
+- Onaylayanlar: [@ardakie](https://github.com/ardakie)
+
+İmzalanan her dosya bu depodaki etiketli bir commit'ten [sürüm iş akışı](.github/workflows/release.yml) ile derlenir; her imzalama isteği elle onaylanır.
+
+## Gizlilik politikası
+
+Bu program, kullanıcı ya da onu kuran/çalıştıran kişi açıkça istemedikçe hiçbir bilgiyi başka ağ sistemlerine aktarmaz.
+
+- İstemlerin ve proje dosyaların yalnızca **senin** bağladığın yapay zekâ hizmetlerine ve entegrasyonlara gider (Claude Code, Codex, OpenAI uyumlu bir API, GitHub, Sentry gibi). Bu verilere o hizmetlerin kendi gizlilik politikaları uygulanır.
+- Konsey açılışta güncellemeleri haber vermek için GitHub API'sinden yalnızca son sürüm numarasını okur. Kişisel veri gönderilmez; Ayarlar → Genel'den kapatabilirsin.
+- Konsey'in sunucusu, hesabı ve kullanım takibi yoktur.
+
+## Sistem değişiklikleri
+
+Konsey yalnızca senin istediğin ya da sana söylediği değişiklikleri yapar:
+
+- Seçtiğin proje klasörünü git deposu olarak hazırlar ve görev kopyalarını (git worktree) yanındaki `.konsey-worktrees-<ad>` klasöründe oluşturur; görev bitince silinir.
+- Ayarlarını, görev geçmişini ve sohbetleri `~/.konsey` klasöründe tutar.
+- Antigravity ile (macOS) klasörlerin için `~/.gemini/config/projects` altına, Antigravity'nin kendisinin de oluşturduğu türden proje kayıtları ekler.
+- Bir ajan CLI'ının kurulumu ya da girişi her zaman sen düğmeye bastıktan sonra, görebildiğin bir Terminal penceresinde yapılır.
+
+## Kaldırma
+
+- **macOS:** Konsey'den çık ve `/Applications/Konsey.app` uygulamasını Çöp Sepeti'ne taşı.
+- **Windows:** Ayarlar → Uygulamalar → Yüklü uygulamalar → Konsey → Kaldır.
+- Verilerini de silmek için `~/.konsey` klasörünü sil (Windows'ta `%USERPROFILE%\.konsey`). macOS'ta API anahtarları, Ayarlar'da sağlayıcıyı sildiğinde ya da Anahtar Zinciri Erişimi'nden (`konsey-provider` / `integration:*` adlı öğeler) kaldırılır.
 
 ## Lisans
 

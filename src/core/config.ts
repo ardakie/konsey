@@ -38,6 +38,8 @@ export interface KonseyConfig {
     language: 'system' | 'tr' | 'en';
     /** "Nasil calisir" tanitimi gosterildi mi. */
     onboarded: boolean;
+    /** Acilista GitHub'dan yeni surum denetimi (yalnizca surum numarasi okunur). */
+    updateCheck: boolean;
   };
 }
 
@@ -50,7 +52,7 @@ export const DEFAULT_CONFIG: KonseyConfig = {
   autoApply: true,
   dismissedClis: [],
   integrations: [],
-  ui: { theme: 'system', mode: 'auto', chatOpen: true, officeOpen: true, language: 'system', onboarded: false },
+  ui: { theme: 'system', mode: 'auto', chatOpen: true, officeOpen: true, language: 'system', onboarded: false, updateCheck: true },
 };
 
 /** Kayitli profillerde eksik kalan hazir ajanlari varsayilanlarla tamamlar. */
