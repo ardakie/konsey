@@ -35,8 +35,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Iki Mac mimarisi ayri islerde: ayni makinede art arda DMG olusturmak
+          # GitHub'in Mac makinelerinde ara sira "hdiutil detach" hatasi veriyor.
           - os: macos-latest
-            args: --mac --arm64 --x64
+            args: --mac --arm64
+          - os: macos-latest
+            args: --mac --x64
           - os: windows-latest
             args: --win --x64
     runs-on: ${{ matrix.os }}
@@ -53,7 +57,10 @@ jobs:
       - run: npm test
       - run: npm run build
       - name: Package
-        run: npx electron-builder ${{ matrix.args }} --publish never
+        shell: bash
+        run: |
+          # Gecici disk goruntusu hatalarina karsi bir kez daha denenir.
+          npx electron-builder ${{ matrix.args }} --publish never || { sleep 20; npx electron-builder ${{ matrix.args }} --publish never; }
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
       - name: Upload to release
