@@ -20,6 +20,7 @@ test edilir, başka bir ajan tarafından incelenir ve her şey geçerse klasör�
 - **Maliyete duyarlı yönlendirme** — Konsey her görevi yapabilecek en ucuz ajana gönderir, pahalı ajanları gerçekten gerektiği işe saklar.
 - **Kullanım limitleri** — her ajanı kendi abonelik limitinizin bir payıyla sınırlayın, örneğin "Claude limitimin en fazla yüzde 40'ını kullan."
 - **Konsey masası** — bir ajanla birebir ya da tüm konseyle aynı anda, ortak bir masada konuşun. Sohbet salt okunurdur — dosya yazmaz.
+- **Entegrasyonlar** — GitHub, Supabase, Sentry, Stripe, PostHog, Notion ya da herhangi bir uzak MCP sunucusunu bir kez bağlayın (Ayarlar → Entegrasyonlar). Claude ve Codex çalışırken bu servisleri kullanabilir, örneğin "Sentry'deki son hataları incele ve düzelt". Token'lar sistemin güvenli deposunda kalır; GitHub ve Supabase varsayılan olarak salt okunur bağlanır.
 - **Piksel ofis** — canlı bir piksel-art ofis, hangi ajanın çalıştığını, incelediğini ya da dinlendiğini gerçek zamanlı gösterir.
 - **Yerel ve özel** — Konseyin sunucusu yoktur; her şey kendi makinenizde, kendi aboneliklerinizle ve API anahtarlarınızla çalışır.
 
@@ -30,7 +31,7 @@ test edilir, başka bir ajan tarafından incelenir ve her şey geçerse klasör�
 | Claude Code | `claude` CLI |
 | OpenAI Codex CLI | `codex` CLI |
 | Google Antigravity | Antigravity'nin yerel ajan sunucusu — **yalnızca macOS** |
-| Gemini CLI, Cursor Agent, GitHub Copilot CLI, OpenCode, Qwen Code, Amp, Factory Droid, Aider | otomatik algılanan kodlama CLI'ları |
+| Gemini CLI, Cursor Agent, GitHub Copilot CLI, OpenCode, Qwen Code, Amp, Factory Droid, Crush, Goose, Aider | otomatik algılanan kodlama CLI'ları |
 | Özel CLI | işaret ettiğiniz herhangi bir komut satırı ajanı |
 | OpenAI-uyumlu API sağlayıcıları | OpenRouter, DeepSeek, GLM ya da kendi uç noktanız, kendi anahtarınızla |
 

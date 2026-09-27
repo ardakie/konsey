@@ -20,6 +20,7 @@ another agent, and — if everything passes — applied to your folder.
 - **Cost-aware routing** — Konsey sends each task to the cheapest agent that can handle it, saving premium calls for the work that needs them.
 - **Usage caps** — cap each agent at a share of your own plan limit, e.g. "use at most 40% of my Claude limit."
 - **Council chat** — talk to one agent one-on-one, or ask the whole council at once, at a shared council table. Chat is read-only — it never writes files.
+- **Integrations** — connect GitHub, Supabase, Sentry, Stripe, PostHog, Notion or any remote MCP server once (Settings → Integrations). Claude and Codex can then use those services while they work, e.g. "check the latest Sentry errors and fix them". Tokens stay in the OS secure storage; GitHub and Supabase connect read-only by default.
 - **Pixel office** — a live pixel-art office shows which agent is working, reviewing, or resting, in real time.
 - **Local & private** — no Konsey servers; everything runs on your machine, using your own subscriptions and API keys.
 
@@ -30,7 +31,7 @@ another agent, and — if everything passes — applied to your folder.
 | Claude Code | `claude` CLI |
 | OpenAI Codex CLI | `codex` CLI |
 | Google Antigravity | Antigravity's local agent server — **macOS only** |
-| Gemini CLI, Cursor Agent, GitHub Copilot CLI, OpenCode, Qwen Code, Amp, Factory Droid, Aider | auto-detected coding CLIs |
+| Gemini CLI, Cursor Agent, GitHub Copilot CLI, OpenCode, Qwen Code, Amp, Factory Droid, Crush, Goose, Aider | auto-detected coding CLIs |
 | Custom CLI | any command-line agent you point Konsey at |
 | OpenAI-compatible API providers | OpenRouter, DeepSeek, GLM, or your own endpoint, with your own key |
 
