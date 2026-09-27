@@ -61,6 +61,9 @@ curl -fsSL https://raw.githubusercontent.com/ardakie/konsey/main/scripts/install
 3. **The installer isn't code-signed**, so Windows SmartScreen may say "Windows protected
    your PC". Click "More info" → "Run anyway".
 
+
+> **Smart App Control (Windows 11):** if Windows says “Smart App Control blocked an app that may be unsafe”, there is no “Run anyway” button — Smart App Control blocks every unsigned program. Until the Windows build is code-signed, you can use Konsey by turning it off: Windows Security → App & browser control → Smart App Control settings → Off. On some Windows versions it cannot be turned back on without resetting Windows.
+
 ### Requirements
 
 - macOS 11+ (Apple Silicon or Intel) or Windows 10/11 x64

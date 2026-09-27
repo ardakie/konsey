@@ -63,6 +63,11 @@ jobs:
           npx electron-builder ${{ matrix.args }} --publish never || { sleep 20; npx electron-builder ${{ matrix.args }} --publish never; }
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
+          # Windows kod imzalama: depo ayarlarina WIN_CSC_LINK (base64 .pfx) ve
+          # WIN_CSC_KEY_PASSWORD gizli degerleri eklenince kurulum ve uygulama
+          # imzali derlenir; Akilli Uygulama Denetimi imzasiz programlari engeller.
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
       - name: Upload to release
         shell: bash
         env:

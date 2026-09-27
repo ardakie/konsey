@@ -62,6 +62,9 @@ curl -fsSL https://raw.githubusercontent.com/ardakie/konsey/main/scripts/install
 3. **Kurulum dosyası imzalı değildir**, bu yüzden Windows SmartScreen "Windows
    bilgisayarınızı korudu" diyebilir. "Daha fazla bilgi" → "Yine de çalıştır"ı tıklayın.
 
+
+> **Akıllı Uygulama Denetimi (Windows 11):** Windows “Akıllı Uygulama Denetimi, güvenli olmayabilecek bir uygulamayı engelledi” derse “Yine de çalıştır” seçeneği yoktur; bu özellik imzasız her programı engeller. Windows sürümü imzalanana kadar Konsey’i kullanmak için kapatabilirsin: Windows Güvenliği → Uygulama ve tarayıcı denetimi → Akıllı Uygulama Denetimi ayarları → Kapalı. Bazı Windows sürümlerinde tekrar açmak için Windows’u sıfırlamak gerekir.
+
 ### Gereksinimler
 
 - macOS 11+ (Apple Silicon ya da Intel) veya Windows 10/11 x64
