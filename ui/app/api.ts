@@ -45,6 +45,16 @@ export interface SystemInfo {
   node: boolean;
 }
 
+/** Hazirlik listesindeki bir madde (git, Node.js, oturum, macOS izni). */
+export interface SetupCheck {
+  id: string;
+  title: string;
+  detail: string;
+  state: 'ok' | 'missing' | 'denied' | 'unknown';
+  required: boolean;
+  action?: { label: string; id: string };
+}
+
 /** Entegrasyon satiri; token degeri arayuze hic gelmez. */
 export interface IntegrationEntry {
   id: string;
@@ -106,7 +116,9 @@ export interface KonseyApi {
   platform: string;
   system(): Promise<SystemInfo>;
   connectList(): Promise<ConnectEntry[]>;
-  connectRun(id: string, action: 'install' | 'login'): Promise<{ ok: boolean; error?: string; opened?: string }>;
+  connectRun(id: string, action: 'install' | 'login'): Promise<{ ok: boolean; error?: string; opened?: string; fix?: string }>;
+  setupChecks(projectDir?: string | null): Promise<SetupCheck[]>;
+  setupFix(id: string): Promise<{ ok: boolean; error?: string }>;
   openExternal(url: string): Promise<boolean>;
   relaunch(): Promise<void>;
   checkUpdate(): Promise<{ current: string; latest: string | null; available: boolean; url: string }>;

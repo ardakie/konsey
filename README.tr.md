@@ -52,7 +52,7 @@ Uyarıyı tamamen atlayan tek satırlık alternatif kurulum (zip'i `curl` ile in
 Gatekeeper'ın kontrol ettiği karantina bayrağını eklemez):
 
 ```bash
-curl -fsSL https://ardakie.github.io/konsey/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ardakie/konsey/main/site/install.sh | bash
 ```
 
 ### Windows
@@ -108,6 +108,11 @@ npm run package:win  # Windows uygulamasını derle
 
 Sürüm yayınlama: `vX.Y.Z` etiketini gönderin; GitHub Actions macOS ve Windows için
 derleyip sürümü yayınlar.
+
+### Web sitesi
+
+İndirme sitesi düz bir klasördür: `site/`. **Cloudflare Pages**'te yayınlamak için bu depoyu bağlayın ve
+*Framework preset:* None, *Build command:* (boş), *Build output directory:* `site` seçin. Site ayrıca `.github/workflows/pages.yml` ile GitHub Pages'e de yüklenir.
 
 ## Veri konumları
 

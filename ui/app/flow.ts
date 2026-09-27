@@ -8,6 +8,7 @@ import { applyRun, draftTask, openChat, pickProject, prepareProject } from './ac
 import { basename, duration, h, icon, md, morph, tildify, tokens } from './dom';
 import { L } from '../../src/shared/i18n';
 import { openGuide } from './guide';
+import { blockingIssue, fixButton, runFix } from './setup';
 import {
   agents,
   avatar,
@@ -316,6 +317,9 @@ function resultCard(record: RunRecord): HTMLElement | null {
   }
   if (!done) {
     actions.append(h('button', { class: 'btn', type: 'button', on: { click: () => draftTask(record.prompt) } }, icon('refresh'), L('Yeniden dene', 'Retry')));
+    const err = record.error ?? '';
+    const fix = fixButton(err, /claude/i.test(err) ? 'claude' : /codex/i.test(err) ? 'codex' : undefined);
+    if (fix) actions.prepend(fix);
     if (/pay|kullanım/i.test(record.error ?? '')) {
       actions.append(h('button', { class: 'btn', type: 'button', on: { click: () => document.getElementById('open-settings')?.click() } }, icon('gauge'), L('Limit ayarları', 'Limit settings')));
     }
@@ -411,16 +415,16 @@ function hero(): HTMLElement {
 
   // Kurulum eksikleri: git yoksa is baslayamaz, hic ajan yoksa kimse calismaz.
   const notices: HTMLElement[] = [];
-  if (state.system && !state.system.git) {
-    notices.push(h('div', { class: 'hero-card glass notice-bad' },
+  // Isi engelleyen ilk hazirlik sorunu: aciklama ve tek tikla cozum.
+  const issue = blockingIssue();
+  if (issue) {
+    notices.push(h('div', { class: `hero-card glass ${issue.required ? 'notice-bad' : 'notice-warn'}` },
       h('span', { class: 'hero-card-icon' }, icon('alert')),
       h('div', { class: 'hero-card-body' },
-        h('div', { class: 'hero-card-title' }, L('Git kurulu değil', 'Git is not installed')),
-        h('div', { class: 'hero-card-sub' }, state.system.platform === 'darwin'
-          ? L('Konsey ajanların işini ayrı kopyalarda tutmak için git kullanır. Terminalde “xcode-select --install” çalıştır ya da git’i indir.', 'Konsey uses git to keep each agent’s work in its own copy. Run “xcode-select --install” in Terminal or download git.')
-          : L('Konsey ajanların işini ayrı kopyalarda tutmak için git kullanır. Git for Windows’u kurup Konsey’i yeniden aç.', 'Konsey uses git to keep each agent’s work in its own copy. Install Git for Windows, then reopen Konsey.')),
+        h('div', { class: 'hero-card-title' }, issue.title),
+        h('div', { class: 'hero-card-sub' }, issue.detail),
       ),
-      h('button', { class: 'btn ink', type: 'button', on: { click: () => void api.openExternal('https://git-scm.com/downloads') } }, icon('external'), L('Git’i indir', 'Get git')),
+      issue.action ? h('button', { class: 'btn ink', type: 'button', on: { click: () => void runFix(issue.action!.id) } }, icon('bolt'), issue.action.label) : null,
     ));
   }
   if (state.availability.length && !agents().some((a) => a.enabled && a.available)) {

@@ -2,6 +2,7 @@
  * Sag panel: Konsey masasi (tum ajanlar sirayla konusur, is notlari da buraya duser)
  * ve her ajanla birebir sohbet.
  */
+import { fixButton } from './setup';
 import type { ChatMessage } from '../../src/shared/types';
 import { api } from './api';
 import { clearChat, draftTask, openChat, sendChat } from './actions';
@@ -105,6 +106,8 @@ function message(m: ChatMessage, threadMessages: ChatMessage[]): HTMLElement {
       ),
       text,
       actions,
+      // Hata mesajlarinin altinda tek tikla cozum (giris yap, izin ver...).
+      !m.pending && m.kind !== 'chat' ? fixButton(m.text, String(m.from)) : null,
     ),
   );
 }

@@ -1,6 +1,6 @@
 {
   "name": "konsey",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Konsey: Claude, Codex, Gemini CLI and other coding agents working together on one project.",
   "main": "dist/electron/main.js",
   "type": "commonjs",
@@ -65,7 +65,13 @@
       "identity": null,
       "artifactName": "Konsey-mac-${arch}.${ext}",
       "extendInfo": {
-        "LSMinimumSystemVersion": "11.0"
+        "LSMinimumSystemVersion": "11.0",
+        "NSAppleEventsUsageDescription": "Konsey opens Terminal to install coding agents and to let you sign in to them.",
+        "NSDesktopFolderUsageDescription": "Konsey and its agents work on project folders you pick on your Desktop.",
+        "NSDocumentsFolderUsageDescription": "Konsey and its agents work on project folders you pick in Documents.",
+        "NSDownloadsFolderUsageDescription": "Konsey and its agents work on project folders you pick in Downloads.",
+        "NSRemovableVolumesUsageDescription": "Konsey and its agents work on project folders you pick on external drives.",
+        "NSNetworkVolumesUsageDescription": "Konsey and its agents work on project folders you pick on network drives."
       }
     },
     "dmg": {

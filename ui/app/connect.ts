@@ -9,6 +9,7 @@ import { api, type ConnectEntry } from './api';
 import { refreshAgents, refreshQuotas } from './actions';
 import { h, icon, toast } from './dom';
 import { avatar, invalidate, state } from './state';
+import { runFix } from './setup';
 
 let entries: ConnectEntry[] | null = null;
 let loading: Promise<void> | null = null;
@@ -42,7 +43,9 @@ async function copy(text: string): Promise<void> {
 async function run(entry: ConnectEntry, action: 'install' | 'login'): Promise<void> {
   const res = await api.connectRun(entry.id, action);
   if (!res.ok) {
-    toast(res.error ?? L('Açılamadı', 'Could not open'), 6000);
+    toast(res.error ?? L('Açılamadı', 'Could not open'), 8000);
+    // Izin reddedildiyse dogru Ayarlar sayfasi kendiliginden acilir.
+    if (res.fix) void runFix(res.fix);
     return;
   }
   if (res.opened === 'docs') return;

@@ -51,7 +51,7 @@ Alternative one-line install that skips the warning entirely (downloads the zip 
 `curl`, which doesn't add the quarantine flag that Gatekeeper checks):
 
 ```bash
-curl -fsSL https://ardakie.github.io/konsey/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ardakie/konsey/main/site/install.sh | bash
 ```
 
 ### Windows
@@ -105,6 +105,11 @@ npm run package:win  # build the Windows app
 
 Releasing: push a tag `vX.Y.Z` and GitHub Actions builds macOS and Windows and publishes
 the release.
+
+### Website
+
+The download site is a static folder: `site/`. To publish it on **Cloudflare Pages**, connect this repository and use
+*Framework preset:* None, *Build command:* (empty), *Build output directory:* `site`. It is also deployed to GitHub Pages by `.github/workflows/pages.yml`.
 
 ## Data locations
 

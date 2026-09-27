@@ -6,7 +6,8 @@
 import { app, ipcMain, shell } from 'electron';
 
 const REPO = 'ardakie/konsey';
-export const DOWNLOAD_PAGE = 'https://ardakie.github.io/konsey/';
+// Sitenin barindirildigi yerden bagimsiz: GitHub'daki son surum sayfasi.
+export const DOWNLOAD_PAGE = 'https://github.com/ardakie/konsey/releases/latest';
 
 export interface UpdateInfo {
   current: string;

@@ -25,6 +25,7 @@ import { L } from '../src/shared/i18n';
 import type { AgentId, KonseyEvent, ProviderConfig, RunMode } from '../src/shared/types';
 import { registerPreview } from './preview';
 import { registerUpdates } from './updates';
+import { grantTerminal, installGit, installNode, remember, runChecks, SETTINGS_URL } from '../src/core/setup';
 import { INTEGRATIONS, integrationDef, resolveIntegrations, secretAccount } from '../src/core/integrations';
 import { runSmoke, SMOKE } from './smoke';
 
@@ -307,7 +308,58 @@ ipcMain.handle('konsey:connect:run', async (_e, id: string, action: 'install' | 
     return { ok: false, error: L('Önce Node.js kurulmalı; indirme sayfası açıldı.', 'Node.js is required first; the download page was opened.') };
   }
   const ok = await openInTerminal(command);
-  return ok ? { ok: true } : { ok: false, error: L('Terminal açılamadı. Komutu kendin çalıştır:', 'Could not open a terminal. Run this command yourself:') + ` ${command}` };
+  if (ok) {
+    remember('terminal', 'ok');
+    return { ok: true };
+  }
+  // macOS Terminal iznini reddettiyse kullaniciya dogru ayar sayfasi sunulur.
+  const terminal = IS_MAC ? await grantTerminal() : 'unknown';
+  if (terminal === 'ok' && (await openInTerminal(command))) return { ok: true };
+  return {
+    ok: false,
+    fix: terminal === 'denied' ? 'open-automation' : undefined,
+    error: terminal === 'denied'
+      ? L('macOS, Konsey’in Terminal’i açmasına izin vermiyor. “Ayarları aç”a bas, Konsey’in yanındaki Terminal’i aç.', 'macOS does not let Konsey open Terminal. Press “Open Settings” and turn on Terminal next to Konsey.')
+      : L('Terminal açılamadı. Komutu kendin çalıştır:', 'Could not open a terminal. Run this command yourself:') + ` ${command}`,
+  };
+});
+
+// ---------------------------------------------------------------- IPC: hazirlik ve izinler
+
+ipcMain.handle('konsey:setup:checks', async (_e, projectDir?: string | null) => runChecks(projectDir ?? null));
+
+/** Tek tikla cozum: izin penceresini acar, kurulumu baslatir ya da Ayarlar'i acar. */
+ipcMain.handle('konsey:setup:fix', async (_e, id: string) => {
+  const openUrl = async (url: string) => {
+    await shell.openExternal(url);
+  };
+  switch (String(id)) {
+    case 'grant-terminal':
+      return { ok: (await grantTerminal()) === 'ok' };
+    case 'open-automation':
+      await openUrl(SETTINGS_URL.automation);
+      return { ok: true };
+    case 'open-files':
+      await openUrl(SETTINGS_URL.files);
+      return { ok: true };
+    case 'install-git':
+      return { ok: await installGit(openInTerminal, openUrl) };
+    case 'install-node':
+      return { ok: await installNode(openInTerminal, openUrl) };
+    case 'login-claude':
+    case 'login-codex': {
+      const info = connectInfo(String(id).slice('login-'.length));
+      if (!info?.login) return { ok: false };
+      const ok = await openInTerminal(info.login);
+      if (!ok && IS_MAC && (await grantTerminal()) === 'denied') {
+        await openUrl(SETTINGS_URL.automation);
+        return { ok: false, error: L('Önce Konsey’e Terminal izni ver.', 'First allow Konsey to use Terminal.') };
+      }
+      return { ok };
+    }
+    default:
+      return { ok: false };
+  }
 });
 
 ipcMain.handle('konsey:openExternal', async (_e, url: string) => {

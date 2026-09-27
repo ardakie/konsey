@@ -28,6 +28,16 @@ export async function git(cwd: string, args: string[]): Promise<GitResult> {
     const { stdout, stderr } = await execFileAsync('git', args, {
       cwd,
       maxBuffer: 32 * 1024 * 1024,
+      windowsHide: true,
+      // Git kimligi ayarlanmamis bilgisayarlarda commit "Please tell me who
+      // you are" diye durmasin; Konsey'in commit'leri Konsey adina atilir.
+      // Git hicbir zaman terminalden sifre sormaya kalkmaz.
+      env: {
+        ...process.env,
+        GIT_COMMITTER_NAME: process.env.GIT_COMMITTER_NAME || 'Konsey',
+        GIT_COMMITTER_EMAIL: process.env.GIT_COMMITTER_EMAIL || 'konsey@localhost',
+        GIT_TERMINAL_PROMPT: '0',
+      },
     });
     return { ok: true, stdout, stderr, code: 0 };
   } catch (err) {

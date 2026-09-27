@@ -1,239 +1,340 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Konsey — AI coding agents, working together</title>
-<meta name="description" content="Konsey coordinates Claude Code, Codex, Antigravity and other AI coding agents on one project folder. Free, open source, runs locally on macOS and Windows.">
-
-<meta property="og:type" content="website">
-<meta property="og:title" content="Konsey — AI coding agents, working together">
-<meta property="og:description" content="One request, split into tasks, run by isolated AI coding agents in parallel — merged, tested, reviewed, then applied to your project.">
-<meta property="og:image" content="https://ardakie.github.io/konsey/icon.png">
-<meta property="og:url" content="https://ardakie.github.io/konsey/">
-<meta name="twitter:card" content="summary">
-
-<link rel="icon" type="image/png" href="favicon.png">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Konsey — AI coding agents, at one table</title>
+  <meta name="description" content="Konsey makes Claude Code, Codex, Gemini CLI and other coding agents work together on one project. Free and open source for macOS and Windows." />
+  <meta name="theme-color" content="#0b0c10" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Konsey — AI coding agents, at one table" />
+  <meta property="og:description" content="Plan, split, build, test and review with the coding agents you already pay for. Free and open source." />
+  <meta property="og:image" content="icon.png" />
+  <meta name="twitter:card" content="summary" />
+  <link rel="icon" type="image/png" href="favicon.png" />
+  <link rel="apple-touch-icon" href="icon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-
-<nav class="wrap nav">
-  <a class="nav-brand" href="#">
-    <img src="icon.png" alt="Konsey icon">
-    <span>Konsey</span>
-  </a>
-  <div class="nav-actions">
-    <div class="lang-toggle">
-      <button type="button" data-lang-btn="en">EN</button>
-      <button type="button" data-lang-btn="tr">TR</button>
-    </div>
-    <a class="gh-link" href="https://github.com/ardakie/konsey" target="_blank" rel="noopener">GitHub</a>
+  <!-- Arka plan: uygulamadaki gibi yavasca suzulen isik kureleri -->
+  <div class="aurora" aria-hidden="true">
+    <i class="orb orb-mint"></i><i class="orb orb-indigo"></i><i class="orb orb-warm"></i>
   </div>
-</nav>
+  <div class="grain" aria-hidden="true"></div>
 
-<header class="wrap hero">
-  <img class="hero-icon" src="icon.png" alt="Konsey">
-  <h1>Konsey</h1>
-  <p class="tagline" data-i18n="hero.tagline"></p>
-  <p class="pitch" data-i18n="hero.pitch"></p>
-
-  <div class="downloads">
-    <a class="btn btn-primary" id="primary-download" href="https://github.com/ardakie/konsey/releases/latest/download/Konsey-mac-arm64.dmg">
-      <span>
-        <span id="primary-download-label" data-i18n="hero.download.macArm"></span>
-        <span class="btn-sub" id="primary-download-sub" data-i18n="hero.download.recommended"></span>
-      </span>
+  <header class="nav" id="nav">
+    <a class="brand" href="#top" aria-label="Konsey">
+      <img src="icon.png" alt="" width="28" height="28" />
+      <span>Konsey</span>
     </a>
-    <div class="secondary-downloads">
-      <a class="btn btn-small" id="dl-mac-arm64" href="https://github.com/ardakie/konsey/releases/latest/download/Konsey-mac-arm64.dmg" data-i18n="hero.download.macArmShort"></a>
-      <a class="btn btn-small" id="dl-mac-x64" href="https://github.com/ardakie/konsey/releases/latest/download/Konsey-mac-x64.dmg" data-i18n="hero.download.macIntelShort"></a>
-      <a class="btn btn-small" id="dl-win" href="https://github.com/ardakie/konsey/releases/latest/download/Konsey-windows-x64-setup.exe" data-i18n="hero.download.winShort"></a>
+    <nav class="nav-links" aria-label="Sections">
+      <a href="#how" data-i18n="nav.how">How it works</a>
+      <a href="#features" data-i18n="nav.features">Features</a>
+      <a href="#agents" data-i18n="nav.agents">Agents</a>
+      <a href="#install" data-i18n="nav.install">Install</a>
+      <a href="#faq" data-i18n="nav.faq">FAQ</a>
+    </nav>
+    <div class="nav-actions">
+      <div class="lang" role="group" aria-label="Language">
+        <button type="button" data-lang="en">EN</button>
+        <button type="button" data-lang="tr">TR</button>
+      </div>
+      <a class="icon-link" href="https://github.com/ardakie/konsey" aria-label="GitHub">
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.52-1.33-1.28-1.69-1.28-1.69-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11 11 0 0 1 5.79 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.84 1.19 3.1 0 4.42-2.7 5.39-5.26 5.68.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5Z"/></svg>
+      </a>
+      <a class="btn btn-primary btn-sm" href="#install" data-i18n="nav.download">Download</a>
     </div>
-    <a class="all-releases" href="https://github.com/ardakie/konsey/releases" target="_blank" rel="noopener" data-i18n="hero.download.all"></a>
-  </div>
-</header>
+  </header>
 
-<section id="screenshot">
-  <div class="wrap">
-    <div class="screenshot-frame">
-      <img id="shot-img" src="shot-en.png" alt="Konsey screenshot" loading="lazy"
-           onerror="this.style.display='none';">
-    </div>
-  </div>
-</section>
-
-<section id="how">
-  <div class="wrap">
-    <h2 data-i18n="how.title"></h2>
-    <p class="section-sub" data-i18n="how.sub"></p>
-    <div class="steps">
-      <div class="step">
-        <span class="step-num">1</span>
-        <h3 data-i18n="how.step1.title"></h3>
-        <p data-i18n="how.step1.body"></p>
-      </div>
-      <div class="step">
-        <span class="step-num">2</span>
-        <h3 data-i18n="how.step2.title"></h3>
-        <p data-i18n="how.step2.body"></p>
-      </div>
-      <div class="step">
-        <span class="step-num">3</span>
-        <h3 data-i18n="how.step3.title"></h3>
-        <p data-i18n="how.step3.body"></p>
-      </div>
-      <div class="step">
-        <span class="step-num">4</span>
-        <h3 data-i18n="how.step4.title"></h3>
-        <p data-i18n="how.step4.body"></p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section id="agents">
-  <div class="wrap">
-    <h2 data-i18n="agents.title"></h2>
-    <p class="section-sub" data-i18n="agents.sub"></p>
-    <div class="chips">
-      <span class="chip">Claude Code</span>
-      <span class="chip">OpenAI Codex CLI</span>
-      <span class="chip" data-i18n="agents.antigravity"></span>
-      <span class="chip">Gemini CLI</span>
-      <span class="chip">Cursor Agent</span>
-      <span class="chip">GitHub Copilot CLI</span>
-      <span class="chip">OpenCode</span>
-      <span class="chip">Qwen Code</span>
-      <span class="chip">Amp</span>
-      <span class="chip">Factory Droid</span>
-      <span class="chip">Crush</span>
-      <span class="chip">Goose</span>
-      <span class="chip">Aider</span>
-      <span class="chip" data-i18n="agents.custom"></span>
-      <span class="chip" data-i18n="agents.apis"></span>
-    </div>
-  </div>
-</section>
-
-<section id="features">
-  <div class="wrap">
-    <h2 data-i18n="features.title"></h2>
-    <div class="features">
-      <div class="feature">
-        <h3 data-i18n="features.parallel.title"></h3>
-        <p data-i18n="features.parallel.body"></p>
-      </div>
-      <div class="feature">
-        <h3 data-i18n="features.cost.title"></h3>
-        <p data-i18n="features.cost.body"></p>
-      </div>
-      <div class="feature">
-        <h3 data-i18n="features.caps.title"></h3>
-        <p data-i18n="features.caps.body"></p>
-      </div>
-      <div class="feature">
-        <h3 data-i18n="features.chat.title"></h3>
-        <p data-i18n="features.chat.body"></p>
-      </div>
-      <div class="feature">
-        <h3 data-i18n="features.office.title"></h3>
-        <p data-i18n="features.office.body"></p>
-      </div>
-      <div class="feature">
-        <h3 data-i18n="features.integrations.title"></h3>
-        <p data-i18n="features.integrations.body"></p>
-      </div>
-      <div class="feature">
-        <h3 data-i18n="features.privacy.title"></h3>
-        <p data-i18n="features.privacy.body"></p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section id="install">
-  <div class="wrap">
-    <h2 data-i18n="install.title"></h2>
-    <p class="section-sub" data-i18n="install.sub"></p>
-    <div class="install-grid">
-      <div class="install-card">
-        <h3 data-i18n="install.mac.title"></h3>
-        <ol>
-          <li data-i18n="install.mac.step1"></li>
-          <li data-i18n="install.mac.step2"></li>
-          <li data-i18n="install.mac.step3"></li>
-        </ol>
-        <div class="warning">
-          <strong data-i18n="install.mac.warningTitle"></strong>
-          <span data-i18n="install.mac.warningBody"></span>
+  <main id="top">
+    <!-- ------------------------------------------------------------ hero -->
+    <section class="hero">
+      <div class="wrap hero-inner">
+        <p class="pill reveal"><span class="pill-dot"></span><span data-i18n="hero.pill">Free &amp; open source · macOS &amp; Windows</span></p>
+        <h1 class="reveal" data-i18n="hero.title">Your AI coding agents,<br />at one table.</h1>
+        <p class="lead reveal" data-i18n="hero.lead">Write one request. Konsey plans it, splits it into tasks and gives each one to the cheapest agent that can do it. Every agent works in its own copy; the result is merged, tested, reviewed — then applied to your folder.</p>
+        <div class="hero-cta reveal">
+          <a class="btn btn-primary btn-lg" id="primary-download" href="https://github.com/ardakie/konsey/releases/latest">
+            <span class="os-icon" id="primary-icon"></span>
+            <span><span id="primary-label">Download</span><small id="primary-sub"></small></span>
+          </a>
+          <a class="btn btn-glass btn-lg" href="#install" data-i18n="hero.other">Other downloads</a>
         </div>
-        <p class="section-sub" style="margin:0 0 10px;text-align:left" data-i18n="install.mac.altLabel"></p>
-        <div class="code-row">
-          <code>curl -fsSL https://ardakie.github.io/konsey/install.sh | bash</code>
-          <button class="copy-btn" type="button" data-copy="curl -fsSL https://ardakie.github.io/konsey/install.sh | bash" data-i18n="install.copy"></button>
+        <p class="hero-meta reveal"><span id="version">&nbsp;</span></p>
+      </div>
+
+      <div class="wrap showcase reveal">
+        <div class="window glass" id="window">
+          <div class="window-bar">
+            <i></i><i></i><i></i>
+            <span>Konsey</span>
+          </div>
+          <picture>
+            <img id="shot" src="shot-en.png" alt="Konsey app: agents working on a task in parallel" width="2880" height="1744" />
+          </picture>
+        </div>
+        <div class="float float-a glass" data-depth="18">
+          <span class="dot" style="--c:#D97757"></span>
+          <div><b>Claude</b><small data-i18n="float.a">Plan ready · 3 tasks</small></div>
+        </div>
+        <div class="float float-b glass" data-depth="28">
+          <span class="dot" style="--c:#6C63E8"></span>
+          <div><b>Codex</b><small data-i18n="float.b">Tests passed ✓</small></div>
+        </div>
+        <div class="float float-c glass" data-depth="12">
+          <span class="dot" style="--c:#4C8DF6"></span>
+          <div><b>Gemini CLI</b><small data-i18n="float.c">writing index.html…</small></div>
         </div>
       </div>
-      <div class="install-card">
-        <h3 data-i18n="install.win.title"></h3>
-        <ol>
-          <li data-i18n="install.win.step1"></li>
-          <li data-i18n="install.win.step2"></li>
-          <li data-i18n="install.win.step3"></li>
-        </ol>
-        <div class="warning">
-          <strong data-i18n="install.win.warningTitle"></strong>
-          <span data-i18n="install.win.warningBody"></span>
+    </section>
+
+    <!-- ------------------------------------------------------------ ajan seridi -->
+    <section class="marquee" aria-label="Supported agents">
+      <div class="marquee-track" id="marquee">
+        <span>Claude Code</span><span>OpenAI Codex</span><span>Gemini CLI</span><span>Cursor Agent</span><span>GitHub Copilot CLI</span><span>OpenCode</span><span>Qwen Code</span><span>Amp</span><span>Factory Droid</span><span>Crush</span><span>Goose</span><span>Aider</span><span>Antigravity</span><span>OpenRouter</span><span>DeepSeek</span>
+      </div>
+    </section>
+
+    <!-- ------------------------------------------------------------ nasil calisir -->
+    <section class="section" id="how">
+      <div class="wrap">
+        <p class="eyebrow reveal" data-i18n="how.eyebrow">How it works</p>
+        <h2 class="reveal" data-i18n="how.title">From one sentence to a tested change.</h2>
+        <div class="steps">
+          <article class="step glass reveal">
+            <span class="step-num">01</span>
+            <div class="step-icon"><svg viewBox="0 0 24 24"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.7-.9l-.8-1.2A2 2 0 0 0 7.9 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg></div>
+            <h3 data-i18n="how.1.t">Pick a folder</h3>
+            <p data-i18n="how.1.d">An empty or existing project. If it isn’t a git repository yet, Konsey prepares it.</p>
+          </article>
+          <article class="step glass reveal">
+            <span class="step-num">02</span>
+            <div class="step-icon"><svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9"/><path d="M16 3.1a4 4 0 0 1 0 7.8"/></svg></div>
+            <h3 data-i18n="how.2.t">Connect your agents</h3>
+            <p data-i18n="how.2.d">Konsey finds the CLIs on your computer. Missing ones install with one click; sign-in opens for you.</p>
+          </article>
+          <article class="step glass reveal">
+            <span class="step-num">03</span>
+            <div class="step-icon"><svg viewBox="0 0 24 24"><circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/></svg></div>
+            <h3 data-i18n="how.3.t">Describe the work</h3>
+            <p data-i18n="how.3.d">Agents claim the tasks they’re best at. Each works in its own git worktree, so nobody overwrites anybody.</p>
+          </article>
+          <article class="step glass reveal">
+            <span class="step-num">04</span>
+            <div class="step-icon"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/><path d="m9 12 2 2 4-4"/></svg></div>
+            <h3 data-i18n="how.4.t">Tested, then applied</h3>
+            <p data-i18n="how.4.d">The parts are merged, your tests run and another agent reviews. Only then does it land in your folder.</p>
+          </article>
         </div>
       </div>
+    </section>
+
+    <!-- ------------------------------------------------------------ ozellikler -->
+    <section class="section" id="features">
+      <div class="wrap">
+        <p class="eyebrow reveal" data-i18n="feat.eyebrow">Features</p>
+        <h2 class="reveal" data-i18n="feat.title">A whole team, without the chaos.</h2>
+        <div class="bento">
+          <article class="card glass span-2 reveal">
+            <div class="card-copy">
+              <h3 data-i18n="feat.parallel.t">Parallel, isolated agents</h3>
+              <p data-i18n="feat.parallel.d">Every agent gets its own copy of your project. Konsey merges the results and runs your checks before anything reaches your folder.</p>
+            </div>
+            <div class="branches" aria-hidden="true">
+              <svg viewBox="0 0 320 120" preserveAspectRatio="none">
+                <path class="trunk" d="M10 60 H310" />
+                <path class="b b1" d="M40 60 C80 60 80 20 120 20 H220 C260 20 260 60 290 60" />
+                <path class="b b2" d="M40 60 C80 60 80 100 120 100 H220 C260 100 260 60 290 60" />
+                <circle cx="40" cy="60" r="5" /><circle cx="290" cy="60" r="6" class="merge" />
+                <circle cx="150" cy="20" r="4" class="n1" /><circle cx="190" cy="20" r="4" class="n1" />
+                <circle cx="150" cy="100" r="4" class="n2" /><circle cx="170" cy="60" r="4" class="n3" />
+              </svg>
+              <div class="tags"><span style="--c:#D97757">Claude</span><span style="--c:#6C63E8">Codex</span><span style="--c:#4C8DF6">Gemini</span></div>
+            </div>
+          </article>
+
+          <article class="card glass reveal">
+            <div class="card-copy">
+              <h3 data-i18n="feat.cost.t">Cost-aware routing</h3>
+              <p data-i18n="feat.cost.d">Simple work goes to cheap models; premium subscriptions are saved for the hard parts.</p>
+            </div>
+            <div class="tiers" aria-hidden="true">
+              <div><span data-i18n="feat.cost.cheap">Cheap</span><i style="--w:88%"></i></div>
+              <div><span data-i18n="feat.cost.mid">Standard</span><i style="--w:54%"></i></div>
+              <div><span data-i18n="feat.cost.premium">Premium</span><i style="--w:22%"></i></div>
+            </div>
+          </article>
+
+          <article class="card glass reveal">
+            <div class="card-copy">
+              <h3 data-i18n="feat.caps.t">Usage caps</h3>
+              <p data-i18n="feat.caps.d">“Use at most 40% of my Claude limit.” The rest stays yours.</p>
+            </div>
+            <div class="cap" aria-hidden="true">
+              <div class="cap-top"><span>Claude</span><b>%40</b></div>
+              <div class="cap-bar"><i></i><em></em></div>
+            </div>
+          </article>
+
+          <article class="card glass span-2 office-card reveal">
+            <div class="card-copy">
+              <h3 data-i18n="feat.office.t">A live pixel office</h3>
+              <p data-i18n="feat.office.d">Watch who is planning at the table, who’s coding at a desk and whose quota is sleeping it off.</p>
+            </div>
+            <img src="office.png" alt="Pixel-art office where the agents work" loading="lazy" width="1540" height="474" />
+          </article>
+
+          <article class="card glass reveal">
+            <div class="card-copy">
+              <h3 data-i18n="feat.chat.t">Council chat</h3>
+              <p data-i18n="feat.chat.d">Ask one agent, or all of them at the table. They build on — and argue with — each other.</p>
+            </div>
+            <div class="bubbles" aria-hidden="true">
+              <p class="bub" style="--c:#D97757" data-i18n="feat.chat.b1">Let’s keep state in one array.</p>
+              <p class="bub right" style="--c:#6C63E8" data-i18n="feat.chat.b2">Agreed — I’ll write render().</p>
+            </div>
+          </article>
+
+          <article class="card glass reveal">
+            <div class="card-copy">
+              <h3 data-i18n="feat.int.t">Integrations</h3>
+              <p data-i18n="feat.int.d">Connect GitHub, Supabase, Sentry, Stripe, PostHog or Notion once; agents use them while they work.</p>
+            </div>
+            <div class="chips" aria-hidden="true">
+              <span>GitHub</span><span>Supabase</span><span>Sentry</span><span>Stripe</span><span>PostHog</span><span>Notion</span><span>MCP</span>
+            </div>
+          </article>
+
+          <article class="card glass span-full private-card reveal">
+            <div class="card-copy">
+              <h3 data-i18n="feat.private.t">Local &amp; private</h3>
+              <p data-i18n="feat.private.d">No Konsey servers. Your code only goes to the AI services you connect; keys live in your OS keychain.</p>
+            </div>
+            <div class="lock" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ------------------------------------------------------------ ajanlar -->
+    <section class="section" id="agents">
+      <div class="wrap">
+        <p class="eyebrow reveal" data-i18n="agents.eyebrow">Agents</p>
+        <h2 class="reveal" data-i18n="agents.title">Bring the agents you already pay for.</h2>
+        <p class="section-lead reveal" data-i18n="agents.lead">Konsey drives the official CLIs with your own subscriptions. Installed ones are picked up automatically; the rest install with one click.</p>
+        <div class="agent-grid reveal">
+          <div class="agent glass"><span class="dot" style="--c:#D97757"></span>Claude Code</div>
+          <div class="agent glass"><span class="dot" style="--c:#6C63E8"></span>OpenAI Codex</div>
+          <div class="agent glass"><span class="dot" style="--c:#4C8DF6"></span>Gemini CLI</div>
+          <div class="agent glass"><span class="dot" style="--c:#9AA0AA"></span>Cursor Agent</div>
+          <div class="agent glass"><span class="dot" style="--c:#8E6BE8"></span>GitHub Copilot CLI</div>
+          <div class="agent glass"><span class="dot" style="--c:#E8A33A"></span>OpenCode</div>
+          <div class="agent glass"><span class="dot" style="--c:#6A5CF5"></span>Qwen Code</div>
+          <div class="agent glass"><span class="dot" style="--c:#F25C54"></span>Amp</div>
+          <div class="agent glass"><span class="dot" style="--c:#E0773C"></span>Factory Droid</div>
+          <div class="agent glass"><span class="dot" style="--c:#C86BF5"></span>Crush</div>
+          <div class="agent glass"><span class="dot" style="--c:#8A8F98"></span>Goose</div>
+          <div class="agent glass"><span class="dot" style="--c:#3FA66B"></span>Aider</div>
+          <div class="agent glass"><span class="dot" style="--c:#3B8BE6"></span>Antigravity <small data-i18n="agents.mac">macOS</small></div>
+          <div class="agent glass"><span class="dot" style="--c:#7fddbf"></span><span data-i18n="agents.api">Any OpenAI-compatible API</span></div>
+          <div class="agent glass"><span class="dot" style="--c:#a3a7b1"></span><span data-i18n="agents.custom">Your own CLI</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ------------------------------------------------------------ kurulum -->
+    <section class="section" id="install">
+      <div class="wrap">
+        <p class="eyebrow reveal" data-i18n="install.eyebrow">Install</p>
+        <h2 class="reveal" data-i18n="install.title">Two minutes to your first task.</h2>
+
+        <div class="install glass reveal">
+          <div class="seg" role="tablist">
+            <button type="button" role="tab" data-os="mac" aria-selected="true">macOS</button>
+            <button type="button" role="tab" data-os="win" aria-selected="false">Windows</button>
+          </div>
+
+          <div class="os-pane" data-pane="mac">
+            <div class="downloads">
+              <a class="dl glass" id="dl-arm" href="https://github.com/ardakie/konsey/releases/latest/download/Konsey-mac-arm64.dmg">
+                <b>Apple Silicon</b><small data-i18n="install.arm">M1, M2, M3, M4 · .dmg</small>
+              </a>
+              <a class="dl glass" id="dl-intel" href="https://github.com/ardakie/konsey/releases/latest/download/Konsey-mac-x64.dmg">
+                <b>Intel</b><small data-i18n="install.intel">Older Macs · .dmg</small>
+              </a>
+            </div>
+            <ol class="howto">
+              <li data-i18n="install.mac.1">Open the DMG and drag Konsey into Applications.</li>
+              <li data-i18n="install.mac.2">The app isn’t notarized by Apple yet, so the first launch shows a warning. Open System Settings → Privacy &amp; Security and press “Open Anyway”.</li>
+              <li data-i18n="install.mac.3">Konsey opens with a short guide: it checks git, finds your agents and asks for the permissions it needs — one button each.</li>
+            </ol>
+            <div class="terminal">
+              <div class="terminal-head"><span data-i18n="install.oneliner">Or install from Terminal (no warning):</span><button type="button" class="copy" data-copy="curl -fsSL https://raw.githubusercontent.com/ardakie/konsey/main/site/install.sh | bash" data-i18n="install.copy">Copy</button></div>
+              <code>curl -fsSL https://raw.githubusercontent.com/ardakie/konsey/main/site/install.sh | bash</code>
+            </div>
+          </div>
+
+          <div class="os-pane" data-pane="win" hidden>
+            <div class="downloads">
+              <a class="dl glass" href="https://github.com/ardakie/konsey/releases/latest/download/Konsey-windows-x64-setup.exe">
+                <b>Windows 10 / 11</b><small data-i18n="install.win">64-bit installer · .exe</small>
+              </a>
+            </div>
+            <ol class="howto">
+              <li data-i18n="install.win.1">Run the installer. It installs for your user only — no admin needed — and opens Konsey.</li>
+              <li data-i18n="install.win.2">If SmartScreen says “Windows protected your PC”, click “More info” → “Run anyway”. The installer isn’t code-signed yet.</li>
+              <li data-i18n="install.win.3">Konsey’s guide installs git and your agents for you with one click each (through winget).</li>
+            </ol>
+          </div>
+
+          <p class="req" data-i18n="install.req">Needs git. Many agent CLIs also need Node.js 20+ — Konsey offers to install both.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ------------------------------------------------------------ sss -->
+    <section class="section" id="faq">
+      <div class="wrap narrow">
+        <p class="eyebrow reveal" data-i18n="faq.eyebrow">FAQ</p>
+        <h2 class="reveal" data-i18n="faq.title">Questions</h2>
+        <div class="faq reveal">
+          <details class="glass"><summary data-i18n="faq.1.q">Is it free?</summary><p data-i18n="faq.1.a">Yes. Konsey is free and open source (MIT). You use your own subscriptions and API keys; Konsey never resells tokens.</p></details>
+          <details class="glass"><summary data-i18n="faq.2.q">Does my code go to Konsey?</summary><p data-i18n="faq.2.a">No. Konsey has no servers and no telemetry. Your code goes only to the AI services you connect.</p></details>
+          <details class="glass"><summary data-i18n="faq.3.q">Can agents break my project?</summary><p data-i18n="faq.3.a">They work in isolated copies. Changes reach your folder only after checks and a review pass — and you can turn automatic applying off.</p></details>
+          <details class="glass"><summary data-i18n="faq.4.q">What permissions does it ask for?</summary><p data-i18n="faq.4.a">On macOS: access to the project folder you pick, and permission to open Terminal for installing and signing in to agents. Konsey shows each one in its setup list with a single button.</p></details>
+          <details class="glass"><summary data-i18n="faq.5.q">Which systems are supported?</summary><p data-i18n="faq.5.a">macOS 11+ (Apple Silicon and Intel) and Windows 10/11 (64-bit). Antigravity is macOS-only.</p></details>
+          <details class="glass"><summary data-i18n="faq.6.q">Is it in Turkish?</summary><p data-i18n="faq.6.a">Yes. Konsey follows your system language: Turkish on a Turkish system, English everywhere else. You can switch in Settings.</p></details>
+        </div>
+      </div>
+    </section>
+
+    <!-- ------------------------------------------------------------ son cagri -->
+    <section class="section cta">
+      <div class="wrap">
+        <div class="cta-card glass reveal">
+          <img src="icon.png" alt="" width="72" height="72" />
+          <h2 data-i18n="cta.title">Give your agents a table.</h2>
+          <p data-i18n="cta.lead">Free, open source, and running on your own machine.</p>
+          <a class="btn btn-primary btn-lg" id="cta-download" href="#install" data-i18n="cta.button">Download Konsey</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="wrap footer-inner">
+      <span>© 2026 Konsey · MIT</span>
+      <span class="footer-links">
+        <a href="https://github.com/ardakie/konsey">GitHub</a>
+        <a href="https://github.com/ardakie/konsey/releases" data-i18n="footer.releases">Releases</a>
+        <a href="https://github.com/ardakie/konsey/issues" data-i18n="footer.issues">Report an issue</a>
+      </span>
     </div>
-  </div>
-</section>
+  </footer>
 
-<section id="requirements" class="requirements">
-  <div class="wrap">
-    <h2 data-i18n="req.title"></h2>
-    <ul>
-      <li data-i18n="req.os"></li>
-      <li data-i18n="req.git"></li>
-      <li data-i18n="req.cli"></li>
-      <li data-i18n="req.node"></li>
-    </ul>
-  </div>
-</section>
-
-<section id="faq">
-  <div class="wrap">
-    <h2 data-i18n="faq.title"></h2>
-    <div class="faq">
-      <details open>
-        <summary data-i18n="faq.q1"></summary>
-        <p data-i18n="faq.a1"></p>
-      </details>
-      <details>
-        <summary data-i18n="faq.q2"></summary>
-        <p data-i18n="faq.a2"></p>
-      </details>
-      <details>
-        <summary data-i18n="faq.q3"></summary>
-        <p data-i18n="faq.a3"></p>
-      </details>
-    </div>
-  </div>
-</section>
-
-<footer class="wrap">
-  <div class="footer-links">
-    <a href="https://github.com/ardakie/konsey" target="_blank" rel="noopener">GitHub</a>
-    <a href="https://github.com/ardakie/konsey/blob/main/LICENSE" target="_blank" rel="noopener" data-i18n="footer.license"></a>
-    <a href="https://github.com/ardakie/konsey/releases" target="_blank" rel="noopener" data-i18n="footer.releases"></a>
-  </div>
-  <div data-i18n="footer.tagline"></div>
-</footer>
-
-<script src="script.js"></script>
+  <script src="script.js"></script>
 </body>
 </html>

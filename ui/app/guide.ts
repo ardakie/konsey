@@ -5,6 +5,7 @@
 import { L } from '../../src/shared/i18n';
 import { api } from './api';
 import { connectPanel, loadConnect } from './connect';
+import { loadSetup, setupPanel } from './setup';
 import { h, icon, morph } from './dom';
 import { invalidate, register, state } from './state';
 
@@ -69,6 +70,7 @@ function render(): void {
         L('Konsey’in sunucusu yok. Her şey bilgisayarında çalışır; kodun yalnızca bağladığın yapay zekâ hizmetlerine gider.',
           'Konsey has no servers. Everything runs on your computer; your code only goes to the AI services you connect.'))),
     ),
+    setupPanel(),
     connectPanel({ compact: true }),
   ];
   morph(body, nodes);
@@ -77,6 +79,7 @@ function render(): void {
 export function openGuide(): void {
   if (!dialog().open) dialog().showModal();
   void loadConnect(true);
+  void loadSetup(true);
   invalidate('guide');
 }
 

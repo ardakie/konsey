@@ -9,6 +9,7 @@ import { h, icon, morph, toast, tokens, until } from './dom';
 import { agents, avatar, invalidate, readiness, register, state, type AgentView } from './state';
 import { connectPanel, removeCliAgent } from './connect';
 import { integrationsTab } from './integrations';
+import { setupPanel } from './setup';
 import { L } from '../../src/shared/i18n';
 
 const $ = (id: string) => document.getElementById(id)!;
@@ -186,6 +187,7 @@ function agentCard(agent: AgentView): HTMLElement {
 }
 
 function agentsTab(body: HTMLElement): void {
+  body.append(setupPanel());
   body.append(
     h('p', { class: 'set-intro' },
       L(

@@ -2874,3 +2874,74 @@ input[type='range']:active::-webkit-slider-thumb {
   background: var(--accent-soft);
   color: var(--accent);
 }
+
+/* ------------------------------------------------------------------ hazirlik ve izinler */
+
+.setup-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 6px;
+}
+
+.setup-row + .setup-row {
+  border-top: 1px solid var(--line);
+}
+
+.setup-dot {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--line);
+  color: var(--ink-3);
+}
+
+.setup-dot svg {
+  width: 14px;
+  height: 14px;
+}
+
+.setup-row.is-ok .setup-dot {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.setup-row.is-warn .setup-dot {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.setup-row.is-bad .setup-dot {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.setup-detail {
+  color: var(--ink-3);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.setup-req {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 99px;
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 10.5px;
+  font-weight: 600;
+  vertical-align: 1px;
+}
+
+.fix-btn {
+  margin-top: 8px;
+  color: var(--accent);
+}
+
+.fix-btn svg {
+  width: 13px;
+  height: 13px;
+}

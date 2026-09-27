@@ -1,4 +1,5 @@
 /** Arayuz eylemleri: ana surece gider, durumu gunceller, ilgili bolumleri yeniler. */
+import { loadSetup } from './setup';
 import type { AgentId, ChatMessage, RunMode } from '../../src/shared/types';
 import { api } from './api';
 import { basename, toast } from './dom';
@@ -49,6 +50,8 @@ export async function useProject(dir: string): Promise<void> {
   if (!state.running) state.selectedRunId = null;
   state.viewed = null;
   await Promise.all([refreshRuns(), loadChats(), refreshAgents()]);
+  // Klasor izni gibi proje ozelindeki denetimler yenilenir.
+  void loadSetup(true);
   invalidate('sidebar', 'flow', 'topbar', 'composer', 'chat');
 }
 

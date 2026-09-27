@@ -25,6 +25,7 @@ import { setupFlow } from './app/flow';
 import { openSettings, setupSettings } from './app/settings';
 import { openGuide, setupGuide } from './app/guide';
 import { applyStaticLocale } from './app/locale';
+import { loadSetup, setupChecks } from './app/setup';
 import { renderSidebar, setupSidebar } from './app/sidebar';
 import { agents, invalidate, metaFor, register, state } from './app/state';
 import type { RunPhase } from '../src/shared/types';
@@ -164,6 +165,8 @@ api.onEvent((event) => {
       void refreshRuns();
       void refreshQuotas();
       void refreshAgents();
+      // Oturum dusmesi gibi sorunlar karsilama kartina ve hazirlik listesine yansir.
+      if (event.run.phase !== 'done') void loadSetup(true);
       invalidate('flow', 'sidebar', 'composer', 'topbar');
       break;
     }
@@ -212,6 +215,7 @@ api.onEvent((event) => {
 
     case 'chat:done':
       liveText.delete(event.message.id);
+      if (event.message.kind === 'error') void loadSetup(true);
       upsertMessage(event.message);
       break;
 
@@ -265,6 +269,12 @@ document.addEventListener('keydown', (event) => {
       $('update-pill').addEventListener('click', () => void api.openDownloads());
     }).catch(() => {});
   }
+
+  // Hazirlik denetimi; kullanici Ayarlar'dan donunce eksikler yeniden denetlenir.
+  void loadSetup();
+  window.addEventListener('focus', () => {
+    if (setupChecks().some((c) => c.state !== 'ok')) void loadSetup(true);
+  });
 
   // Ilk acilista kisa tanitim ve ajan baglama paneli.
   if (!state.config.ui.onboarded) openGuide();
