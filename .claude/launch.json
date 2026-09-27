@@ -33,7 +33,7 @@
         "http.server",
         "8125",
         "--directory",
-        "site"
+        "/Users/ardakie/Desktop/konsey-site"
       ],
       "port": 8125
     }
