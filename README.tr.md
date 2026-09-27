@@ -10,7 +10,7 @@ görevlere böler ve her görevi yapabilecek en ucuz ajana verir. Her ajan kendi
 git worktree'sinde çalışır, böylece hiçbiri birbirine karışmaz; sonuçlar birleştirilir,
 test edilir, başka bir ajan tarafından incelenir ve her şey geçerse klasörünüze uygulanır.
 
-[İndir](https://github.com/ardakie/konsey/releases/latest) · [Sürümler](https://github.com/ardakie/konsey/releases) · [Kod imzalama politikası](#kod-imzalama-politikası-code-signing-policy)
+[Site ve indirme](https://konsey.weis.ltd) · [Sürümler](https://github.com/ardakie/konsey/releases) · [Kod imzalama politikası](#kod-imzalama-politikası-code-signing-policy)
 
 ![Konsey ekran görüntüsü](docs/screenshot-tr.png)
 

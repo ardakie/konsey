@@ -10,7 +10,7 @@ tasks, and hands each task to the cheapest agent that can do it. Every agent wor
 own isolated git worktree so they never collide; results are merged, tested, reviewed by
 another agent, and — if everything passes — applied to your folder.
 
-[Download](https://github.com/ardakie/konsey/releases/latest) · [Releases](https://github.com/ardakie/konsey/releases) · [Code signing policy](#code-signing-policy)
+[Website & download](https://konsey.weis.ltd) · [Releases](https://github.com/ardakie/konsey/releases) · [Code signing policy](#code-signing-policy)
 
 ![Konsey screenshot](docs/screenshot-en.png)
 
