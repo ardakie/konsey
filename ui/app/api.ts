@@ -4,6 +4,8 @@ import type {
   AgentQuota,
   AgentUsageTotals,
   ChatMessage,
+  Debate,
+  DebateSummary,
   KonseyEvent,
   ProviderConfig,
   AgentProfile,
@@ -35,6 +37,8 @@ export interface KonseyConfig {
     language?: 'system' | 'tr' | 'en';
     onboarded?: boolean;
     updateCheck?: boolean;
+    debateDepth?: number;
+    projectsDir?: string;
   };
 }
 
@@ -160,6 +164,19 @@ export interface KonseyApi {
   sendChat(args: { projectDir: string | null; thread: string; text: string }): Promise<{ ok: boolean; error?: string }>;
   cancelChat(thread: string): Promise<boolean>;
   clearChat(projectDir: string | null, thread: string): Promise<boolean>;
+
+  listDebates(projectDir: string | null): Promise<DebateSummary[]>;
+  getDebate(id: string): Promise<Debate | null>;
+  startDebate(args: { topic: string; projectDir: string | null; depth: number }): Promise<{ ok: boolean; debate?: Debate; error?: string }>;
+  sayDebate(id: string, text: string): Promise<{ ok: boolean; error?: string }>;
+  roundDebate(id: string): Promise<{ ok: boolean; error?: string }>;
+  summarizeDebate(id: string): Promise<{ ok: boolean; error?: string }>;
+  cancelDebate(id: string): Promise<boolean>;
+  deleteDebate(id: string): Promise<boolean>;
+  renameDebate(id: string, title: string): Promise<Debate | null>;
+  convertDebate(args: { id: string; parentDir?: string; name?: string; details: string }): Promise<{ ok: boolean; projectDir?: string; file?: string; prompt?: string; isNew?: boolean; error?: string }>;
+  pickFolder(defaultPath?: string): Promise<string | null>;
+  defaultProjectsDir(): Promise<string>;
 
   listRuns(projectDir?: string | null): Promise<RunSummary[]>;
   getRun(id: string): Promise<StoredRun | null>;

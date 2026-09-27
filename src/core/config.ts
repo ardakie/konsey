@@ -40,6 +40,10 @@ export interface KonseyConfig {
     onboarded: boolean;
     /** Acilista GitHub'dan yeni surum denetimi (yalnizca surum numarasi okunur). */
     updateCheck: boolean;
+    /** Tartismalarin kac turla baslayacagi (1-3). */
+    debateDepth?: number;
+    /** Fikirden donusen yeni projelerin acildigi son klasor. */
+    projectsDir?: string;
   };
 }
 

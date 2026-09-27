@@ -1,6 +1,6 @@
 /** Alt yazma kutusu: istek, calisma modu, katilacak ajanlar ve gorsel ekleri. */
 import { api, type ImageAttachment } from './api';
-import { setMode, startRun, toggleAgent } from './actions';
+import { setMode, startRun, submitDebate, toggleAgent } from './actions';
 import { autosize, h, icon, morph, toast } from './dom';
 import { agents, avatar, invalidate, MODES, PHASE_LABEL, readiness, register, state } from './state';
 import { L } from '../../src/shared/i18n';
@@ -92,12 +92,33 @@ export function renderComposer(): void {
   renderModeMenu();
 
   const prompt = $('prompt') as HTMLTextAreaElement;
-  const hasText = prompt.value.trim().length > 0 || state.attachments.length > 0;
-  ($('start-run') as HTMLButtonElement).disabled = state.running || !hasText;
-  $('start-run').hidden = state.running;
-  $('cancel-run').hidden = !state.running;
+  const debating = state.debateId !== null;
+  const debateBusy = debating && Boolean(state.debate?.busy);
+  const busy = debating ? debateBusy : state.running;
+  const hasText = prompt.value.trim().length > 0 || (!debating && state.attachments.length > 0);
+  ($('start-run') as HTMLButtonElement).disabled = busy || !hasText;
+  $('start-run').hidden = busy;
+  $('cancel-run').hidden = !busy;
+  // Tartismada gorsel eki ve calisma modu yoktur.
+  $('attach-images').hidden = debating;
+  (document.querySelector('#composer .picker-wrap') as HTMLElement).hidden = debating;
+  $('attachments').hidden = debating || state.attachments.length === 0;
 
   const ready = agents().filter((a) => readiness(a).ok);
+  if (debating) {
+    $('status-line').textContent = debateBusy
+      ? state.debate?.busy === 'summary' ? L('Karar notu yazılıyor…', 'Writing the decision note…') : L('Ajanlar tartışıyor…', 'The agents are debating…')
+      : ready.length
+        ? L(`${ready.length} ajan katılacak`, `${ready.length} agent${ready.length === 1 ? '' : 's'} will join`)
+        : L('Hazır ajan yok — soldan birini aç', 'No agent ready — turn one on from the sidebar');
+    prompt.placeholder = state.debateId === 'new'
+      ? L('Tartışılacak fikri yaz… (Enter başlatır, Shift+Enter yeni satır)', 'Describe the idea to debate… (Enter starts, Shift+Enter for a new line)')
+      : debateBusy
+        ? L('Ajanlar konuşuyor… bitince katılabilir ya da durdurabilirsin.', 'The agents are talking… join in when they finish, or stop them.')
+        : L('Tartışmaya katıl: soru sor, itiraz et, yön ver…', 'Join the discussion: ask, push back, steer…');
+    return;
+  }
+
   $('status-line').textContent = state.running
     ? `${PHASE_LABEL[state.live?.phase ?? 'planning']}…`
     : !state.project
@@ -130,6 +151,18 @@ export function setupComposer(): void {
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     const text = prompt.value.trim();
+    if (state.debateId !== null) {
+      if (!text || state.debate?.busy) return;
+      const draft = prompt.value;
+      prompt.value = '';
+      autosize(prompt, 220);
+      if (!(await submitDebate(text))) {
+        prompt.value = draft;
+        autosize(prompt, 220);
+      }
+      invalidate('composer');
+      return;
+    }
     if ((!text && !state.attachments.length) || state.running) return;
     const previous = prompt.value;
     prompt.value = '';
@@ -143,6 +176,11 @@ export function setupComposer(): void {
   });
 
   $('cancel-run').addEventListener('click', () => {
+    if (state.debateId !== null) {
+      if (state.debate) void api.cancelDebate(state.debate.id);
+      toast(L('Durduruluyor…', 'Stopping…'), 1500);
+      return;
+    }
     void api.cancelRun();
     toast(L('Durduruluyor…', 'Stopping…'), 1500);
   });

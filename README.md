@@ -20,6 +20,7 @@ another agent, and — if everything passes — applied to your folder.
 - **Cost-aware routing** — Konsey sends each task to the cheapest agent that can handle it, saving premium calls for the work that needs them.
 - **Usage caps** — cap each agent at a share of your own plan limit, e.g. "use at most 40% of my Claude limit."
 - **Council chat** — talk to one agent one-on-one, or ask the whole council at once, at a shared council table. Chat is read-only — it never writes files.
+- **Debate mode** — put an idea up for debate before any code is written, about the open project or as a free idea with no project at all. Agents take roles (Architect, Critic, User advocate, Pragmatist), speak independently in the opening round and answer each other afterwards; Konsey then writes a scored decision note (verdict, first version, approach, risks, open questions, first steps). One click turns a debate into a project: Konsey creates a folder where you choose, writes the discussion to `KONSEY.md` and starts building. A debate about an existing project becomes a task instead, with the discussion saved under `docs/konsey/`. Debates never change files.
 - **Integrations** — connect GitHub, Supabase, Sentry, Stripe, PostHog, Notion or any remote MCP server once (Settings → Integrations). Claude and Codex can then use those services while they work, e.g. "check the latest Sentry errors and fix them". Tokens stay in the OS secure storage; GitHub and Supabase connect read-only by default.
 - **Pixel office** — a live pixel-art office shows which agent is working, reviewing, or resting, in real time.
 - **Local & private** — no Konsey servers; everything runs on your machine, using your own subscriptions and API keys.
@@ -120,6 +121,7 @@ The download site lives in a separate repository and is published with Cloudflar
 | `~/.konsey/config.json` | Provider definitions, agent profiles, recent projects. No secrets. |
 | `~/.konsey/runs/` | Task run history. |
 | `~/.konsey/chats/` | Council and one-on-one chat history. |
+| `~/.konsey/debates/` | Debates and decision notes. Free-idea debates run in the empty `~/.konsey/debate-room` folder. |
 | Secrets | macOS: Keychain (`konsey-provider` service). Windows/Linux: `~/.konsey/secrets.json`, encrypted with Electron `safeStorage` (DPAPI on Windows). |
 
 ## Code signing policy
@@ -144,7 +146,8 @@ This program will not transfer any information to other networked systems unless
 Konsey only changes things you ask for or that it tells you about:
 
 - It prepares the project folder you pick as a git repository and creates task copies (git worktrees) in a `.konsey-worktrees-<name>` folder next to it; they are removed when a task ends.
-- It keeps its settings, run history and chats in `~/.konsey`.
+- It keeps its settings, run history, chats and debates in `~/.konsey`.
+- When you turn a debate into a project, it creates the new folder where you choose (with `KONSEY.md`); for an existing project it writes the discussion to `docs/konsey/`. Existing files are never overwritten.
 - With Antigravity (macOS), it adds project records for your folders in `~/.gemini/config/projects`, the same records Antigravity creates itself.
 - Installing an agent CLI or signing in always happens in a Terminal window you can see, after you press the button.
 

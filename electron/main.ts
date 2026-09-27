@@ -17,6 +17,7 @@ import { listModels } from '../src/core/providers/client';
 import { applyIntegration, headCommit, isGitRepo, prepareRepo } from '../src/core/git';
 import { computeQuotas, recordLimits, usageTotals } from '../src/core/usage';
 import { clearThread, loadChats, postUserMessage, putMessage, sendChat } from '../src/core/chat';
+import { advanceDebate, convertDebate, createDebate, deleteDebate, getDebate, listDebates, postToDebate, renameDebate } from '../src/core/debates';
 import { deleteRun, listRuns, loadRun, saveRun, type ActivityLine } from '../src/core/runs';
 import { runAgent } from '../src/core/adapters';
 import { CLI_PRESETS, detectInstalledClis, presetFor, profileForPreset } from '../src/core/clis';
@@ -37,6 +38,8 @@ registerUpdates();
 let activeRun: { orchestrator: Orchestrator; controller: AbortController } | null = null;
 /** Sohbet turlari: konu basina bir kontrolcu. */
 const activeChats = new Map<string, AbortController>();
+/** Tartisma turlari: tartisma basina bir kontrolcu. */
+const activeDebates = new Map<string, AbortController>();
 
 function overlayColors(dark: boolean) {
   return { color: dark ? '#1B1C20' : '#F6F6F4', symbolColor: dark ? '#E8E8EA' : '#1C1D21', height: 44 };
@@ -74,6 +77,8 @@ function createWindow(): void {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      // Duman testinde pencere arkada kalsa da arayuz cizilmeye devam etsin.
+      backgroundThrottling: !SMOKE,
       additionalArguments: [`--konsey-lang=${LANG}`, `--konsey-platform=${process.platform}`],
     },
   });
@@ -116,6 +121,7 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   activeRun?.controller.abort();
   for (const controller of activeChats.values()) controller.abort();
+  for (const controller of activeDebates.values()) controller.abort();
   if (process.platform !== 'darwin') app.quit();
 });
 
@@ -624,6 +630,133 @@ ipcMain.handle(
 ipcMain.handle('konsey:chat:cancel', async (_e, thread: string) => {
   activeChats.get(thread)?.abort();
   return true;
+});
+
+// ---------------------------------------------------------------- IPC: tartismalar
+
+/**
+ * Turlar arka planda ilerler; IPC hemen doner, mesajlar olay olarak akar.
+ * Ayni tartismada ayni anda tek islem calisir.
+ */
+async function runDebate(id: string, rounds: number, summarize: boolean): Promise<{ ok: boolean; error?: string }> {
+  const debate = await getDebate(id);
+  if (!debate) return { ok: false, error: L('Tartışma bulunamadı.', 'Discussion not found.') };
+  if (activeDebates.has(id) || debate.busy) return { ok: false, error: L('Ajanlar hâlâ konuşuyor.', 'The agents are still talking.') };
+  const controller = new AbortController();
+  activeDebates.set(id, controller);
+  void (async () => {
+    try {
+      const config = await loadConfig();
+      const { profiles, providers } = await runnableAgents(config, debate.projectDir);
+      await advanceDebate(id, {
+        rounds,
+        summarize,
+        profiles,
+        providers,
+        integrations: debate.projectDir ? await resolveIntegrations(config.integrations, getSecret) : [],
+        coordinator: config.coordinator,
+        signal: controller.signal,
+        emit: send,
+      });
+    } catch (error) {
+      console.warn('[debate]', (error as Error).message);
+    } finally {
+      activeDebates.delete(id);
+    }
+  })();
+  return { ok: true };
+}
+
+const clampDepth = (depth: unknown) => Math.max(1, Math.min(3, Math.round(Number(depth) || 2)));
+
+ipcMain.handle('konsey:debates:list', async (_e, projectDir: string | null) => listDebates(projectDir ?? null));
+ipcMain.handle('konsey:debates:get', async (_e, id: string) => {
+  const debate = await getDebate(String(id)).catch(() => null);
+  return debate ? structuredClone(debate) : null;
+});
+
+ipcMain.handle('konsey:debates:start', async (_e, args: { topic: string; projectDir: string | null; depth?: number }) => {
+  try {
+    const debate = await createDebate(String(args.topic ?? ''), args.projectDir || null);
+    const res = await runDebate(debate.id, clampDepth(args.depth), true);
+    return { ...res, debate: structuredClone(await getDebate(debate.id)) };
+  } catch (error) {
+    return { ok: false, error: (error as Error).message };
+  }
+});
+
+ipcMain.handle('konsey:debates:say', async (_e, id: string, text: string) => {
+  if (!String(text ?? '').trim()) return { ok: false, error: L('Boş mesaj.', 'Empty message.') };
+  if (activeDebates.has(id)) return { ok: false, error: L('Ajanlar hâlâ konuşuyor; bitince yaz ya da durdur.', 'The agents are still talking; write when they finish or stop them.') };
+  try {
+    const debate = await postToDebate(id, String(text));
+    send({ type: 'debate:updated', debate: structuredClone(debate) });
+    return runDebate(id, 1, true);
+  } catch (error) {
+    return { ok: false, error: (error as Error).message };
+  }
+});
+
+ipcMain.handle('konsey:debates:round', async (_e, id: string) => runDebate(id, 1, true));
+ipcMain.handle('konsey:debates:summarize', async (_e, id: string) => runDebate(id, 0, true));
+
+ipcMain.handle('konsey:debates:cancel', async (_e, id: string) => {
+  activeDebates.get(id)?.abort();
+  return true;
+});
+
+ipcMain.handle('konsey:debates:delete', async (_e, id: string) => {
+  activeDebates.get(id)?.abort();
+  await deleteDebate(id);
+  return true;
+});
+
+ipcMain.handle('konsey:debates:rename', async (_e, id: string, title: string) => {
+  const debate = await renameDebate(id, String(title ?? ''));
+  if (debate) send({ type: 'debate:updated', debate: structuredClone(debate) });
+  return debate ? structuredClone(debate) : null;
+});
+
+ipcMain.handle('konsey:debates:convert', async (_e, args: { id: string; parentDir?: string; name?: string; details?: string }) => {
+  if (activeDebates.has(args.id)) return { ok: false, error: L('Ajanlar hâlâ konuşuyor; bitmesini bekle ya da durdur.', 'The agents are still talking; wait for them or stop them.') };
+  try {
+    const config = await loadConfig();
+    const result = await convertDebate(args.id, {
+      parentDir: args.parentDir,
+      name: args.name,
+      details: String(args.details ?? ''),
+      profiles: config.profiles,
+      providers: config.providers,
+      emit: send,
+    });
+    return { ok: true, ...result };
+  } catch (error) {
+    return { ok: false, error: (error as Error).message };
+  }
+});
+
+ipcMain.handle('konsey:pickFolder', async (_e, defaultPath?: string) => {
+  const opts: Electron.OpenDialogOptions = {
+    properties: ['openDirectory', 'createDirectory'],
+    title: L('Projenin açılacağı yeri seç', 'Choose where to create the project'),
+    buttonLabel: L('Seç', 'Choose'),
+    defaultPath: defaultPath || undefined,
+  };
+  const res = await (mainWindow ? dialog.showOpenDialog(mainWindow, opts) : dialog.showOpenDialog(opts));
+  return res.canceled || !res.filePaths.length ? null : res.filePaths[0];
+});
+
+/** Yeni projeler icin varsayilan yer: son secilen, yoksa son projenin yani, yoksa Belgeler/Konsey. */
+ipcMain.handle('konsey:projectsDir', async () => {
+  const config = await loadConfig();
+  const candidates = [
+    config.ui.projectsDir,
+    config.recentProjects[0] ? path.dirname(config.recentProjects[0]) : undefined,
+  ].filter((p): p is string => Boolean(p));
+  for (const candidate of candidates) {
+    if ((await stat(candidate).catch(() => null))?.isDirectory()) return candidate;
+  }
+  return path.join(app.getPath('documents'), 'Konsey');
 });
 
 // ---------------------------------------------------------------- IPC: gorevler

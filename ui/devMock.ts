@@ -5,7 +5,8 @@
  * gercek kopru her zaman vardir, bu dosyaya hic ugranmaz.
  */
 import { L } from '../src/shared/i18n';
-import type { AgentQuota, ChatMessage, KonseyEvent, RunPhase, RunRecord, Task } from '../src/shared/types';
+import type { AgentQuota, ChatMessage, Debate, DebateMessage, KonseyEvent, RunPhase, RunRecord, Task } from '../src/shared/types';
+import { assignRoles } from '../src/shared/debate';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -32,6 +33,74 @@ export function createMockApi(): any {
   };
   const chats: Record<string, ChatMessage[]> = {};
   const runs: { record: RunRecord; activity: any[] }[] = [];
+  const debates: Debate[] = [];
+
+  const DEBATE_LINES: Record<string, string[]> = {
+    builder: [
+      L('Tek sayfalık bir web uygulamasıyla başlarım: **Next.js + SQLite**, giriş için e-posta bağlantısı. Sipariş akışı üç ekran: ürünler, sepet, onay.', 'I would start with a single-page web app: **Next.js + SQLite**, email-link sign-in. The order flow is three screens: products, cart, confirmation.'),
+      L('Eleştirmenin haklı olduğu yer ödeme; ilk sürümde kapıda ödeme yeterli. Bildirimleri de e-postayla başlatalım.', 'The critic is right about payments; cash on delivery is enough for v1. Let us start notifications over email.'),
+    ],
+    critic: [
+      L('En büyük risk alışkanlık: esnaf WhatsApp’tan vazgeçmeyebilir. Ayrıca stok takibi olmadan siparişler yanlış olur.', 'The biggest risk is habit: shops may not give up WhatsApp. And without stock tracking, orders will go wrong.'),
+      L('Kapıda ödemeye katılıyorum; ama WhatsApp’a sipariş özeti gönderen bir köprü olmadan kimse kullanmaz.', 'I agree on cash on delivery, but without a bridge that sends the order summary to WhatsApp nobody will use it.'),
+    ],
+    user: [
+      L('Esnaf için değer: dağınık mesajlar yerine tek liste. Müşteri için değer: ne kadar tuttuğunu önceden görmek.', 'Value for the shop: one list instead of scattered messages. Value for the customer: seeing the total up front.'),
+      L('WhatsApp köprüsü şart; müşteri alıştığı yerden onay almalı.', 'The WhatsApp bridge is essential; customers should get confirmation where they already are.'),
+    ],
+    pragmatist: [
+      L('MVP: ürün listesi, sepet, sipariş listesi. Stok, ödeme ve kurye sonraya. İki haftalık iş.', 'MVP: product list, cart, order list. Stock, payments and couriers later. Two weeks of work.'),
+      L('Anlaştık: WhatsApp bağlantısı “paylaş” bağlantısıyla basitçe yapılabilir, API gerekmez.', 'Agreed: the WhatsApp link can be a simple share link, no API needed.'),
+    ],
+  };
+
+  function publishDebate(d: Debate) {
+    emit({ type: 'debate:updated', debate: structuredClone(d) });
+  }
+
+  async function mockTalk(d: Debate, agent: string, round: number) {
+    const role = d.roles?.[agent] ?? 'builder';
+    const m: DebateMessage = { id: uid(), from: agent as any, text: '', at: Date.now(), round, role, kind: 'say', pending: true };
+    d.messages.push(m);
+    publishDebate(d);
+    const full = (DEBATE_LINES[role] ?? DEBATE_LINES.builder)[Math.min(round - 1, 1)];
+    for (let i = 20; i < full.length; i += 24) {
+      await sleep(90);
+      emit({ type: 'debate:delta', debateId: d.id, id: m.id, from: agent as any, text: full.slice(0, i) });
+    }
+    m.pending = false;
+    m.text = full;
+    m.at = Date.now();
+    publishDebate(d);
+  }
+
+  async function mockAdvance(d: Debate, rounds: number) {
+    const speakers = ['claude', 'codex', 'cli:gemini', 'provider:glm'];
+    d.roles = assignRoles(d.roles, speakers as any);
+    d.busy = 'round';
+    publishDebate(d);
+    for (let r = 0; r < rounds; r++) {
+      const round = Math.max(0, ...d.messages.map((m) => m.round)) + 1;
+      if (round === 1) await Promise.all(speakers.map((a) => mockTalk(d, a, round)));
+      else for (const a of speakers) await mockTalk(d, a, round);
+    }
+    d.busy = 'summary';
+    publishDebate(d);
+    const text = L(
+      '## Karar\nYapmaya değer: esnafın dağınık siparişlerini tek listeye toplamak gerçek bir ihtiyaç; WhatsApp köprüsüyle başlanırsa benimsenir. Puan: 7.5/10\n## Önerilen ilk sürüm\n- Ürün listesi ve sepet\n- Sipariş listesi (esnaf ekranı)\n- WhatsApp paylaşım bağlantısıyla sipariş özeti\n- Kapıda ödeme\n## Teknik yaklaşım\n- Next.js + SQLite, tek sunucu\n- E-posta bağlantısıyla giriş\n## Riskler\n- Esnafın alışkanlığını değiştirmek\n- Stok takibi olmadan hatalı sipariş\n## Açık sorular\n- Esnaf ürünleri kendisi mi girecek?\n- Tek dükkân mı, çok dükkân mı?\n## İlk adımlar\n1. Veri modeli\n2. Ürün ve sepet ekranı\n3. Sipariş listesi ve WhatsApp bağlantısı',
+      '## Verdict\nWorth building: collecting a shop’s scattered orders into one list is a real need; starting with a WhatsApp bridge makes adoption likely. Score: 7.5/10\n## Suggested first version\n- Product list and cart\n- Order list (shop screen)\n- Order summary via WhatsApp share link\n- Cash on delivery\n## Technical approach\n- Next.js + SQLite, single server\n- Email-link sign-in\n## Risks\n- Changing shop habits\n- Wrong orders without stock tracking\n## Open questions\n- Will shops enter products themselves?\n- One shop or many?\n## First steps\n1. Data model\n2. Product and cart screens\n3. Order list and WhatsApp link',
+    );
+    for (let i = 40; i < text.length; i += 60) {
+      await sleep(60);
+      emit({ type: 'debate:delta', debateId: d.id, id: 'summary', from: 'claude', text: text.slice(0, i) });
+    }
+    d.summary = { text, at: Date.now(), by: 'claude', score: 7.5, name: 'esnaf-siparis' };
+    d.busy = undefined;
+    d.updatedAt = Date.now();
+    publishDebate(d);
+  }
+
+  const debateSummary = (d: Debate) => ({ id: d.id, title: d.title, projectDir: d.projectDir, updatedAt: d.updatedAt, score: d.summary?.score, busy: d.busy, converted: Boolean(d.converted) });
 
   function quotas(): AgentQuota[] {
     const cap = (id: string) =>
@@ -261,6 +330,53 @@ export function createMockApi(): any {
       delete chats[thread];
       return true;
     },
+    listDebates: async (dir: string | null) => debates.filter((d) => !d.projectDir || d.projectDir === dir).map(debateSummary).sort((a, b) => b.updatedAt - a.updatedAt),
+    getDebate: async (id: string) => structuredClone(debates.find((d) => d.id === id) ?? null),
+    startDebate: async ({ topic, projectDir, depth }: { topic: string; projectDir: string | null; depth: number }) => {
+      const now = Date.now();
+      const d: Debate = { id: `${uid()}${uid()}`, title: topic.split('\n')[0].slice(0, 80), topic, projectDir, createdAt: now, updatedAt: now, messages: [{ id: uid(), from: 'user', text: topic, at: now, round: 0, kind: 'user' }] };
+      debates.push(d);
+      void mockAdvance(d, depth);
+      return { ok: true, debate: structuredClone(d) };
+    },
+    sayDebate: async (id: string, text: string) => {
+      const d = debates.find((x) => x.id === id)!;
+      d.messages.push({ id: uid(), from: 'user', text, at: Date.now(), round: Math.max(...d.messages.map((m) => m.round)), kind: 'user' });
+      publishDebate(d);
+      void mockAdvance(d, 1);
+      return { ok: true };
+    },
+    roundDebate: async (id: string) => {
+      void mockAdvance(debates.find((x) => x.id === id)!, 1);
+      return { ok: true };
+    },
+    summarizeDebate: async (id: string) => {
+      void mockAdvance(debates.find((x) => x.id === id)!, 0);
+      return { ok: true };
+    },
+    cancelDebate: async () => true,
+    deleteDebate: async (id: string) => {
+      const i = debates.findIndex((d) => d.id === id);
+      if (i >= 0) debates.splice(i, 1);
+      return true;
+    },
+    renameDebate: async (id: string, title: string) => {
+      const d = debates.find((x) => x.id === id);
+      if (!d) return null;
+      d.title = title;
+      publishDebate(d);
+      return structuredClone(d);
+    },
+    convertDebate: async ({ id, parentDir, name }: { id: string; parentDir?: string; name?: string }) => {
+      const d = debates.find((x) => x.id === id)!;
+      const projectDir = d.projectDir ?? `${parentDir}/${name || 'yeni-proje'}`;
+      const file = d.projectDir ? `${projectDir}/docs/konsey/${d.summary?.name ?? 'fikir'}.md` : `${projectDir}/KONSEY.md`;
+      d.converted = { projectDir, file, at: Date.now() };
+      publishDebate(d);
+      return { ok: true, projectDir, file, isNew: !d.projectDir, prompt: `${d.title}\n\n${d.summary?.text ?? ''}` };
+    },
+    pickFolder: async () => '/Users/ardakie/Documents/Konsey',
+    defaultProjectsDir: async () => '/Users/ardakie/Desktop',
     listRuns: async () => runs.map(({ record }) => ({ id: record.id, projectDir: record.projectDir, prompt: record.prompt, phase: record.phase, strategy: record.strategy, startedAt: record.startedAt, endedAt: record.endedAt, applied: record.applied?.ok })),
     getRun: async (id: string) => structuredClone(runs.find((r) => r.record.id === id) ?? null),
     deleteRun: async (id: string) => {

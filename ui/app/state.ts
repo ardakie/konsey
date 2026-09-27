@@ -10,6 +10,8 @@ import type {
   AgentQuota,
   AgentUsageTotals,
   ChatMessage,
+  Debate,
+  DebateSummary,
   RunMode,
   RunPhase,
   RunRecord,
@@ -48,6 +50,15 @@ export interface State {
   settingsTab: 'agents' | 'providers' | 'integrations' | 'general';
   /** Uyuyan (kota/pay dolu) ajanlar: ofis ve kenar cubugu icin. */
   sleeping: Map<string, { retryAt?: number; reason?: string }>;
+  /** Serbest fikirler ve secili projenin tartismalari. */
+  debates: DebateSummary[];
+  /** Ana alanda acik tartisma; 'new' yeni tartisma ekrani, null ise gorev akisi. */
+  debateId: string | null;
+  debate: Debate | null;
+  /** Yeni tartismanin kapsami: secili proje ya da serbest fikir. */
+  debateScope: 'project' | 'free';
+  /** Konusan ajanlarin akan metni (mesaj kimligi -> metin). */
+  debateLive: Map<string, { from: string; text: string }>;
 }
 
 export const state: State = {
@@ -81,6 +92,11 @@ export const state: State = {
   settingsTab: 'agents',
   sleeping: new Map(),
   system: null,
+  debates: [],
+  debateId: null,
+  debate: null,
+  debateScope: 'project',
+  debateLive: new Map(),
 };
 
 const renderers = new Map<Part, () => void>();

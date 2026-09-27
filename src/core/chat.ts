@@ -135,6 +135,56 @@ ${transcript}
 Şimdi ${opts.label} olarak cevap ver:`;
 }
 
+/** Sohbet ya da tartisma turu: ajani salt okunur calistirir, akisi iletir, kullanimi kaydeder. */
+export async function talkTurn(opts: {
+  agent: AgentId;
+  prompt: string;
+  cwd: string;
+  signal?: AbortSignal;
+  profiles: AgentProfile[];
+  providers: ProviderConfig[];
+  integrations?: ActiveIntegration[];
+  /** Akan metin; arac kullanimi italik ve uc noktayla gelir. */
+  onLive?: (text: string) => void;
+}): Promise<{ ok: boolean; text: string; cancelled?: boolean }> {
+  const parse = createActivityParser(opts.agent);
+  let live = '';
+  const result = await runAgent({
+    runId: `chat-${randomUUID().slice(0, 6)}`,
+    agent: opts.agent,
+    cwd: opts.cwd,
+    prompt: opts.prompt,
+    allowWrite: false,
+    lean: true,
+    timeoutMs: 4 * 60 * 1000,
+    signal: opts.signal,
+    ...chatModel(opts.agent),
+    onChunk: (chunk) => {
+      for (const item of parse(chunk)) {
+        live = item.tone === 'say' ? item.text : live || `${item.text}…`;
+        opts.onLive?.(item.tone === 'say' ? item.text : `_${item.text}…_`);
+      }
+    },
+  }, { providers: opts.providers, profiles: opts.profiles, integrations: opts.integrations });
+
+  // Hic calismadan donen (bulunamadi, pay dolu) cagrilar kullanima sayilmaz.
+  if (result.ok || result.usage || result.durationMs > 0) {
+    await recordUsage(opts.agent, {
+      tokens: result.usage?.totalTokens,
+      costUsd: result.usage?.costUsd,
+      durationMs: result.durationMs,
+    }).catch(() => {});
+  }
+  if (result.limits?.length) await recordLimits(opts.agent, result.limits).catch(() => {});
+
+  if (result.ok) return { ok: true, text: result.text.trim() || live || L('(boş cevap)', '(empty response)') };
+  if (result.failureKind === 'cancelled') return { ok: false, cancelled: true, text: L('Durduruldu.', 'Stopped.') };
+  return {
+    ok: false,
+    text: L(`Cevap veremedim: ${(result.error ?? 'bilinmeyen hata').slice(0, 400)}`, `I couldn't respond: ${(result.error ?? 'unknown error').slice(0, 400)}`),
+  };
+}
+
 export interface ChatRequest {
   projectDir: string | null;
   thread: 'council' | AgentId;
@@ -219,47 +269,19 @@ export async function sendChat(req: ChatRequest): Promise<void> {
       listing,
     });
 
-    const parse = createActivityParser(agent);
-    let live = '';
-    const result = await runAgent({
-      runId: `chat-${id.slice(0, 6)}`,
+    const turn = await talkTurn({
       agent,
-      cwd: req.projectDir ?? os.homedir(),
       prompt,
-      allowWrite: false,
-      lean: true,
-      timeoutMs: 4 * 60 * 1000,
+      cwd: req.projectDir ?? os.homedir(),
       signal: req.signal,
-      ...chatModel(agent),
-      onChunk: (chunk) => {
-        for (const item of parse(chunk)) {
-          live = item.tone === 'say' ? item.text : live || `${item.text}…`;
-          req.emit({ type: 'chat:delta', id, thread: req.thread, text: item.tone === 'say' ? item.text : `_${item.text}…_` });
-        }
-      },
-    }, { providers: req.providers, profiles: req.profiles, integrations: req.integrations });
-
-    // Hic calismadan donen (bulunamadi, pay dolu) cagrilar kullanima sayilmaz.
-    if (result.ok || result.usage || result.durationMs > 0) {
-      await recordUsage(agent, {
-        tokens: result.usage?.totalTokens,
-        costUsd: result.usage?.costUsd,
-        durationMs: result.durationMs,
-      }).catch(() => {});
-    }
-    if (result.limits?.length) await recordLimits(agent, result.limits).catch(() => {});
-
-    const final: ChatMessage = result.ok
-      ? { ...base, text: result.text.trim(), at: Date.now() }
-      : {
-          ...base,
-          kind: 'error',
-          at: Date.now(),
-          text: result.failureKind === 'cancelled'
-            ? L('Durduruldu.', 'Stopped.')
-            : L(`Cevap veremedim: ${(result.error ?? 'bilinmeyen hata').slice(0, 400)}`, `I couldn't respond: ${(result.error ?? 'unknown error').slice(0, 400)}`),
-        };
-    if (!final.text) final.text = live || L('(boş cevap)', '(empty response)');
+      profiles: req.profiles,
+      providers: req.providers,
+      integrations: req.integrations,
+      onLive: (text) => req.emit({ type: 'chat:delta', id, thread: req.thread, text }),
+    });
+    const final: ChatMessage = turn.ok
+      ? { ...base, text: turn.text, at: Date.now() }
+      : { ...base, kind: 'error', at: Date.now(), text: turn.text };
     await putMessage(req.projectDir, final);
     req.emit({ type: 'chat:done', message: final });
   }

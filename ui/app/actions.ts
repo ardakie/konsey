@@ -46,10 +46,12 @@ export async function loadChats(): Promise<void> {
 
 export async function useProject(dir: string): Promise<void> {
   state.project = await api.selectProject(dir);
+  // Baska projeye ait acik tartisma kapanir; serbest fikirler acik kalir.
+  if (state.debate?.projectDir && state.debate.projectDir !== dir) closeDebate();
   state.config.recentProjects = [dir, ...state.config.recentProjects.filter((p) => p !== dir)].slice(0, 12);
   if (!state.running) state.selectedRunId = null;
   state.viewed = null;
-  await Promise.all([refreshRuns(), loadChats(), refreshAgents()]);
+  await Promise.all([refreshRuns(), loadChats(), refreshAgents(), refreshDebates()]);
   // Klasor izni gibi proje ozelindeki denetimler yenilenir.
   void loadSetup(true);
   invalidate('sidebar', 'flow', 'topbar', 'composer', 'chat');
@@ -85,6 +87,7 @@ export function toggleAgent(id: AgentId, enabled?: boolean): void {
 }
 
 export function newTask(): void {
+  closeDebate();
   state.selectedRunId = null;
   state.view = 'flow';
   invalidate('flow', 'sidebar', 'topbar');
@@ -92,6 +95,7 @@ export function newTask(): void {
 }
 
 export async function openRun(id: string): Promise<void> {
+  closeDebate();
   state.selectedRunId = id;
   state.view = 'flow';
   if (state.live?.record.id !== id) {
@@ -130,7 +134,7 @@ export function setMode(mode: RunMode): void {
   void saveConfig();
 }
 
-export async function startRun(prompt: string): Promise<boolean> {
+export async function startRun(prompt: string, mode: RunMode = state.config.ui.mode): Promise<boolean> {
   if (!state.project) {
     await pickProject();
     if (!state.project) return false;
@@ -146,7 +150,7 @@ export async function startRun(prompt: string): Promise<boolean> {
   state.running = true;
   state.attachments = [];
   invalidate('composer');
-  const res = await api.startRun({ projectDir: state.project!.dir, prompt: fullPrompt, mode: state.config.ui.mode });
+  const res = await api.startRun({ projectDir: state.project!.dir, prompt: fullPrompt, mode });
   if (!res.ok) {
     state.running = false;
     toast(res.error ?? L('Görev başlatılamadı.', 'Could not start the task.'));
@@ -199,6 +203,7 @@ export async function clearChat(): Promise<void> {
 
 export function draftTask(text: string): void {
   const area = document.getElementById('prompt') as HTMLTextAreaElement | null;
+  closeDebate();
   state.selectedRunId = null;
   invalidate('flow', 'sidebar', 'topbar');
   if (area) {
@@ -206,4 +211,81 @@ export function draftTask(text: string): void {
     area.dispatchEvent(new Event('input'));
     area.focus();
   }
+}
+
+// --------------------------------------------------------------- tartismalar
+
+export async function refreshDebates(): Promise<void> {
+  state.debates = await api.listDebates(state.project?.dir ?? null).catch(() => []);
+  invalidate('sidebar');
+}
+
+function focusPrompt(): void {
+  requestAnimationFrame(() => (document.getElementById('prompt') as HTMLTextAreaElement | null)?.focus());
+}
+
+/** Yeni tartisma ekrani; yazma kutusu fikri alir. */
+export function newDebate(scope?: 'project' | 'free'): void {
+  state.debateId = 'new';
+  state.debate = null;
+  state.debateScope = scope ?? (state.project ? state.debateScope : 'free');
+  if (!state.project) state.debateScope = 'free';
+  invalidate('flow', 'sidebar', 'topbar', 'composer');
+  focusPrompt();
+}
+
+export async function openDebate(id: string): Promise<void> {
+  const debate = await api.getDebate(id);
+  if (!debate) {
+    toast(L('Tartışma bulunamadı.', 'Discussion not found.'));
+    await refreshDebates();
+    return;
+  }
+  state.debateId = id;
+  state.debate = debate;
+  invalidate('flow', 'sidebar', 'topbar', 'composer');
+}
+
+export function closeDebate(): void {
+  if (!state.debateId) return;
+  state.debateId = null;
+  state.debate = null;
+  invalidate('flow', 'sidebar', 'topbar', 'composer');
+}
+
+export function debateBusy(): boolean {
+  return Boolean(state.debate?.busy);
+}
+
+/** Yeni tartisma baslatir ya da acik tartismaya kullanici olarak katilir. */
+export async function submitDebate(text: string): Promise<boolean> {
+  if (state.debateId === 'new') {
+    const projectDir = state.debateScope === 'project' ? state.project?.dir ?? null : null;
+    const res = await api.startDebate({ topic: text, projectDir, depth: state.config.ui.debateDepth ?? 2 });
+    if (!res.ok || !res.debate) {
+      toast(res.error ?? L('Tartışma başlatılamadı.', 'Could not start the discussion.'));
+      return false;
+    }
+    state.debateId = res.debate.id;
+    state.debate = res.debate;
+    await refreshDebates();
+    invalidate('flow', 'composer', 'topbar');
+    return true;
+  }
+  if (!state.debate) return false;
+  const res = await api.sayDebate(state.debate.id, text);
+  if (!res.ok) toast(res.error ?? L('Mesaj gönderilemedi.', 'Could not send the message.'));
+  return res.ok;
+}
+
+export async function debateAction(action: 'round' | 'summarize'): Promise<void> {
+  if (!state.debate) return;
+  const res = action === 'round' ? await api.roundDebate(state.debate.id) : await api.summarizeDebate(state.debate.id);
+  if (!res.ok) toast(res.error ?? L('Başlatılamadı.', 'Could not start.'));
+}
+
+export async function removeDebate(id: string): Promise<void> {
+  await api.deleteDebate(id);
+  if (state.debateId === id) closeDebate();
+  await refreshDebates();
 }

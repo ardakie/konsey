@@ -19,6 +19,9 @@
         <button id="new-task" class="sb-new" type="button">
           <span data-icon="compose"></span><span data-en="New task">Yeni görev</span><kbd>⌘N</kbd>
         </button>
+        <button id="new-debate" class="sb-new" type="button">
+          <span data-icon="debate"></span><span data-en="New discussion">Yeni tartışma</span><kbd>⌘D</kbd>
+        </button>
 
         <div class="sb-project-wrap">
           <button id="project-switcher" class="sb-project" type="button" aria-haspopup="menu">
@@ -31,6 +34,11 @@
           </button>
           <div id="project-menu" class="menu" role="menu" hidden></div>
         </div>
+
+        <nav class="sb-section sb-debates" aria-label="Tartışmalar" data-en-aria-label="Discussions">
+          <div class="eyebrow" data-en="Discussions">Tartışmalar</div>
+          <ul id="debate-list" class="run-list"></ul>
+        </nav>
 
         <nav class="sb-section sb-runs" aria-label="Görevler" data-en-aria-label="Tasks">
           <div class="eyebrow" data-en="Tasks">Görevler</div>
@@ -178,6 +186,23 @@
           <button id="guide-start" class="btn ink" type="button" data-en="Get started">Başla</button>
         </footer>
       </div>
+    </dialog>
+
+    <dialog id="convert" class="sheet convert">
+      <form id="convert-form" class="sheet-inner">
+        <header class="sheet-head">
+          <div>
+            <div class="eyebrow" data-en="Discussion">Tartışma</div>
+            <h2 id="convert-title" class="display-sm" data-en="Turn into a project">Projeye dönüştür</h2>
+          </div>
+          <button id="convert-close" class="icon-btn" type="button" title="Kapat" data-en-title="Close" style="margin-left: auto"><span data-icon="x"></span></button>
+        </header>
+        <div id="convert-body" class="sheet-body"></div>
+        <footer class="guide-foot">
+          <button id="convert-cancel" class="btn" type="button" data-en="Cancel">Vazgeç</button>
+          <button id="convert-go" class="btn ink" type="submit" data-en="Create and start">Oluştur ve başlat</button>
+        </footer>
+      </form>
     </dialog>
 
     <div id="toast" class="toast" role="status" hidden></div>

@@ -1,6 +1,6 @@
 {
   "name": "konsey",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Konsey: Claude, Codex, Gemini CLI and other coding agents working together on one project.",
   "main": "dist/electron/main.js",
   "type": "commonjs",

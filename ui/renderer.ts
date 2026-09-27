@@ -10,7 +10,9 @@ import { setupPreview } from './preview';
 import { api, isDesktop } from './app/api';
 import {
   loadChats,
+  newDebate,
   newTask,
+  refreshDebates,
   refreshAgents,
   refreshQuotas,
   refreshRuns,
@@ -22,6 +24,7 @@ import { setupComposer } from './app/composer';
 import { hydrateIcons, toast } from './app/dom';
 import { charIndexFor } from './app/heads';
 import { setupFlow } from './app/flow';
+import { setupDebate } from './app/debate';
 import { openSettings, setupSettings } from './app/settings';
 import { openGuide, setupGuide } from './app/guide';
 import { applyStaticLocale } from './app/locale';
@@ -43,6 +46,7 @@ setupChat();
 setupComposer();
 setupSettings();
 setupGuide();
+setupDebate();
 
 // --------------------------------------------------------------- ust cubuk ve gorunum
 
@@ -50,11 +54,18 @@ const office = new PixelOffice($('office') as HTMLCanvasElement, 'assets/');
 let officeReady = false;
 
 function renderTopbar(): void {
-  const run = state.selectedRunId
+  if (state.debateId !== null) {
+    const d = state.debate;
+    $('thread-title').textContent = d ? d.title : L('Yeni tartışma', 'New discussion');
+    $('thread-meta').textContent = d
+      ? d.projectDir ? L(`Tartışma · ${d.projectDir.split(/[\\/]/).pop()}`, `Discussion · ${d.projectDir.split(/[\\/]/).pop()}`) : L('Tartışma · serbest fikir', 'Discussion · free idea')
+      : '';
+  }
+  const run = state.debateId !== null ? undefined : state.selectedRunId
     ? state.live?.record.id === state.selectedRunId ? state.live.record : state.viewed?.record
     : null;
-  $('thread-title').textContent = run ? run.prompt.split('\n')[0].slice(0, 90) || L('Görev', 'Task') : L('Yeni görev', 'New task');
-  $('thread-meta').textContent = run ? new Date(run.startedAt).toLocaleString(locale(), { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+  if (state.debateId === null) $('thread-title').textContent = run ? run.prompt.split('\n')[0].slice(0, 90) || L('Görev', 'Task') : L('Yeni görev', 'New task');
+  if (state.debateId === null) $('thread-meta').textContent = run ? new Date(run.startedAt).toLocaleString(locale(), { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
   const open = state.config.ui.officeOpen !== false;
   $('office-toggle').classList.toggle('is-on', open);
   $('office-toggle').setAttribute('aria-pressed', String(open));
@@ -219,6 +230,36 @@ api.onEvent((event) => {
       upsertMessage(event.message);
       break;
 
+    case 'debate:updated': {
+      const d = event.debate;
+      const item = { id: d.id, title: d.title, projectDir: d.projectDir, updatedAt: d.updatedAt, score: d.summary?.score, busy: d.busy, converted: Boolean(d.converted) };
+      const index = state.debates.findIndex((x) => x.id === d.id);
+      if (index >= 0) state.debates[index] = item;
+      else if (!d.projectDir || d.projectDir === state.project?.dir) state.debates.unshift(item);
+      state.debates.sort((a, b) => b.updatedAt - a.updatedAt);
+      if (state.debate?.id === d.id) state.debate = d;
+      for (const m of d.messages) if (!m.pending) state.debateLive.delete(m.id);
+      if (d.busy !== 'summary') state.debateLive.delete(`summary:${d.id}`);
+      // Ofiste tartisanlar toplanti masasina gecer; bir gorev calisiyorsa sahneye dokunulmaz.
+      if (officeReady && !state.running) {
+        const speaking = new Set(d.messages.filter((m) => m.pending).map((m) => String(m.from)));
+        for (const agent of Object.keys(d.roles ?? {})) {
+          if (state.sleeping.has(agent)) continue;
+          if (d.busy) office.setActivity(agent, speaking.has(agent) ? 'thinking' : 'meeting');
+          else office.setOnline(agent);
+        }
+      }
+      invalidate('flow', 'sidebar', 'composer', 'topbar');
+      break;
+    }
+
+    case 'debate:delta':
+      // Karar notu akisi tartisma basina ayri tutulur; iki tartisma ayni anda yazabilir.
+      state.debateLive.set(event.id === 'summary' ? `summary:${event.debateId}` : event.id, { from: event.from, text: event.text });
+      if (officeReady) office.pulse(event.from);
+      if (state.debate?.id === event.debateId) flowSoon();
+      break;
+
     case 'quota:updated':
       state.quotas = event.quotas;
       invalidate('sidebar', 'composer', 'settings', 'chat');
@@ -241,6 +282,9 @@ document.addEventListener('keydown', (event) => {
     state.config.ui.chatOpen = !state.config.ui.chatOpen;
     void api.saveConfig(state.config);
     invalidate('chat');
+  } else if (mod && !event.shiftKey && event.key.toLowerCase() === 'd') {
+    event.preventDefault();
+    newDebate();
   } else if (mod && event.key.toLowerCase() === 'o') {
     event.preventDefault();
     toggleOffice();
@@ -286,7 +330,7 @@ document.addEventListener('keydown', (event) => {
       state.project = null;
     }
   } else {
-    await Promise.all([loadChats(), refreshAgents()]);
+    await Promise.all([loadChats(), refreshAgents(), refreshDebates()]);
   }
 
   try {

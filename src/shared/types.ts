@@ -235,7 +235,11 @@ export type KonseyEvent =
   | { type: 'chat:message'; message: ChatMessage }
   | { type: 'chat:delta'; id: string; thread: ChatMessage['thread']; text: string }
   | { type: 'chat:done'; message: ChatMessage }
-  | { type: 'quota:updated'; quotas: AgentQuota[] };
+  | { type: 'quota:updated'; quotas: AgentQuota[] }
+  /** Tartisma degisti (yeni mesaj, ozet, durum); tam kayit gelir. */
+  | { type: 'debate:updated'; debate: Debate }
+  /** Konusan ajanin akan metni. */
+  | { type: 'debate:delta'; debateId: string; id: string; from: AgentId; text: string };
 
 /** Ajan calistirma istegi. */
 export interface AgentRunRequest {
@@ -386,4 +390,53 @@ export interface AgentProfile {
   dailyTurnBudget?: number;
   /** Ek CLI ajanlari icin calistirma tanimi. */
   cli?: CliAgentConfig;
+}
+
+/** Tartismada bir ajana verilen bakis acisi. */
+export type DebateRole = 'builder' | 'critic' | 'user' | 'pragmatist' | 'all';
+
+export interface DebateMessage {
+  id: string;
+  from: AgentId | 'user' | 'orchestrator';
+  text: string;
+  at: number;
+  /** 0: kullanicinin konusu ya da araya girdigi mesaj; 1..n: ajan turlari. */
+  round: number;
+  role?: DebateRole;
+  kind: 'say' | 'user' | 'error';
+  pending?: boolean;
+}
+
+/**
+ * Fikir tartismasi: bir projeye bagli ya da projesiz (serbest fikir).
+ * Ajanlar farkli rollerle turlar halinde konusur, Konsey sonunda bir karar
+ * ozeti yazar; tartisma tek tikla projeye ya da goreve donusturulur.
+ */
+export interface Debate {
+  id: string;
+  title: string;
+  topic: string;
+  /** Bagli oldugu proje; null ise serbest fikir. */
+  projectDir: string | null;
+  createdAt: number;
+  updatedAt: number;
+  messages: DebateMessage[];
+  /** Ajan basina sabit rol; yeni katilan ajana en az kullanilan rol verilir. */
+  roles?: Record<string, DebateRole>;
+  /** Son karar ozeti (Markdown). */
+  summary?: { text: string; at: number; by: AgentId; score?: number; name?: string };
+  /** Calisan tur ya da ozet varsa. */
+  busy?: 'round' | 'summary';
+  converted?: { projectDir: string; file: string; at: number };
+}
+
+/** Kenar cubugu listesi icin kisa kayit. */
+export interface DebateSummary {
+  id: string;
+  title: string;
+  projectDir: string | null;
+  updatedAt: number;
+  score?: number;
+  busy?: Debate['busy'];
+  converted?: boolean;
 }

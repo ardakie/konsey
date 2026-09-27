@@ -4,7 +4,8 @@
  */
 import type { RunPhase, RunRecord, Task } from '../../src/shared/types';
 import { api, type ActivityLine } from './api';
-import { applyRun, draftTask, openChat, pickProject, prepareProject } from './actions';
+import { applyRun, draftTask, newDebate, openChat, pickProject, prepareProject } from './actions';
+import { debateContent } from './debate';
 import { basename, duration, h, icon, md, morph, tildify, tokens } from './dom';
 import { L } from '../../src/shared/i18n';
 import { openGuide } from './guide';
@@ -470,6 +471,18 @@ function hero(): HTMLElement {
     h('h1', { class: 'display' }, `${greet}.`, h('br'), L('Bugün ne inşa edelim?', 'What should we build today?')),
     ...notices,
     projectCard,
+    h('button', {
+      class: 'hero-card glass debate-invite',
+      type: 'button',
+      on: { click: () => newDebate() },
+    },
+      h('span', { class: 'hero-card-icon' }, icon('bulb')),
+      h('div', { class: 'hero-card-body' },
+        h('div', { class: 'hero-card-title' }, L('Aklında bir fikir mi var? Önce tartıştır.', 'Got an idea? Debate it first.')),
+        h('div', { class: 'hero-card-sub' }, L('Ajanlar fikri farklı açılardan değerlendirir, Konsey puanlar; beğenirsen projeye dönüştürürsün.', 'Agents weigh it from different angles and Konsey scores it; turn it into a project if you like it.')),
+      ),
+      h('span', { class: 'btn' }, icon('debate'), L('Tartış', 'Debate')),
+    ),
     team,
     suggestions,
   );
@@ -480,8 +493,9 @@ let lastKey = '';
 export function renderFlow(): void {
   const scroller = $('flow-scroll');
   const flow = $('flow');
-  const run = currentRun();
-  const key = run ? run.record.id : 'hero';
+  const debating = state.debateId !== null;
+  const run = debating ? null : currentRun();
+  const key = debating ? `debate-${state.debateId}` : run ? run.record.id : 'hero';
   const nearBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 120;
   const previousTop = scroller.scrollTop;
 
@@ -492,7 +506,9 @@ export function renderFlow(): void {
   });
 
   const nodes: Node[] = [];
-  if (!run) {
+  if (debating) {
+    nodes.push(...debateContent());
+  } else if (!run) {
     nodes.push(hero());
   } else {
     const prompt = run.record.prompt.split('\n\nEkli görseller')[0];
@@ -508,9 +524,11 @@ export function renderFlow(): void {
     body.dataset.seen = '1';
   });
 
+  // Canli tartisma ve gorevde alt kenara yapisik kalinir.
+  const follow = Boolean(run) || (debating && state.debateId !== 'new');
   if (key !== lastKey) {
-    scroller.scrollTop = run && run.live ? scroller.scrollHeight : 0;
-  } else if (nearBottom && run) {
+    scroller.scrollTop = (run && run.live) || (debating && state.debate?.busy) ? scroller.scrollHeight : 0;
+  } else if (nearBottom && follow) {
     scroller.scrollTop = scroller.scrollHeight;
   } else {
     scroller.scrollTop = previousTop;

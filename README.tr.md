@@ -20,6 +20,7 @@ test edilir, başka bir ajan tarafından incelenir ve her şey geçerse klasör�
 - **Maliyete duyarlı yönlendirme** — Konsey her görevi yapabilecek en ucuz ajana gönderir, pahalı ajanları gerçekten gerektiği işe saklar.
 - **Kullanım limitleri** — her ajanı kendi abonelik limitinizin bir payıyla sınırlayın, örneğin "Claude limitimin en fazla yüzde 40'ını kullan."
 - **Konsey masası** — bir ajanla birebir ya da tüm konseyle aynı anda, ortak bir masada konuşun. Sohbet salt okunurdur — dosya yazmaz.
+- **Tartış modu** — kod yazılmadan önce bir fikri ajanlara tartıştırın: açık projeyle ilgili ya da hiç proje olmadan serbest bir fikir olarak. Ajanlar rol alır (Mimar, Eleştirmen, Kullanıcı sesi, Pragmatist), açılış turunda birbirini görmeden konuşur, sonra birbirine cevap verir; Konsey sonunda puanlı bir karar notu yazar (karar, ilk sürüm, yaklaşım, riskler, açık sorular, ilk adımlar). Tek tıkla tartışma projeye dönüşür: Konsey seçtiğiniz yerde bir klasör açar, tartışmayı `KONSEY.md` olarak yazar ve kurmaya başlar. Mevcut bir projeyle ilgili tartışma ise göreve dönüşür, tartışma `docs/konsey/` altına kaydedilir. Tartışmalar hiçbir dosyayı değiştirmez.
 - **Entegrasyonlar** — GitHub, Supabase, Sentry, Stripe, PostHog, Notion ya da herhangi bir uzak MCP sunucusunu bir kez bağlayın (Ayarlar → Entegrasyonlar). Claude ve Codex çalışırken bu servisleri kullanabilir, örneğin "Sentry'deki son hataları incele ve düzelt". Token'lar sistemin güvenli deposunda kalır; GitHub ve Supabase varsayılan olarak salt okunur bağlanır.
 - **Piksel ofis** — canlı bir piksel-art ofis, hangi ajanın çalıştığını, incelediğini ya da dinlendiğini gerçek zamanlı gösterir.
 - **Yerel ve özel** — Konseyin sunucusu yoktur; her şey kendi makinenizde, kendi aboneliklerinizle ve API anahtarlarınızla çalışır.
@@ -123,6 +124,7 @@ derleyip sürümü yayınlar.
 | `~/.konsey/config.json` | Sağlayıcı tanımları, ajan profilleri, son projeler. Anahtar içermez. |
 | `~/.konsey/runs/` | Görev çalışma geçmişi. |
 | `~/.konsey/chats/` | Konsey masası ve birebir sohbet geçmişi. |
+| `~/.konsey/debates/` | Tartışmalar ve karar notları. Serbest fikir tartışmaları boş `~/.konsey/debate-room` klasöründe çalışır. |
 | Anahtarlar | macOS: Keychain (`konsey-provider` servisi). Windows/Linux: `~/.konsey/secrets.json`, Electron `safeStorage` ile şifrelenir (Windows'ta DPAPI). |
 
 ## Kod imzalama politikası (Code signing policy)
@@ -147,7 +149,8 @@ Bu program, kullanıcı ya da onu kuran/çalıştıran kişi açıkça istemedik
 Konsey yalnızca senin istediğin ya da sana söylediği değişiklikleri yapar:
 
 - Seçtiğin proje klasörünü git deposu olarak hazırlar ve görev kopyalarını (git worktree) yanındaki `.konsey-worktrees-<ad>` klasöründe oluşturur; görev bitince silinir.
-- Ayarlarını, görev geçmişini ve sohbetleri `~/.konsey` klasöründe tutar.
+- Ayarlarını, görev geçmişini, sohbetleri ve tartışmaları `~/.konsey` klasöründe tutar.
+- Bir tartışmayı projeye dönüştürdüğünde yeni klasörü seçtiğin yerde (`KONSEY.md` ile) açar; mevcut projede tartışmayı `docs/konsey/` altına yazar. Var olan dosyaların üstüne asla yazmaz.
 - Antigravity ile (macOS) klasörlerin için `~/.gemini/config/projects` altına, Antigravity'nin kendisinin de oluşturduğu türden proje kayıtları ekler.
 - Bir ajan CLI'ının kurulumu ya da girişi her zaman sen düğmeye bastıktan sonra, görebildiğin bir Terminal penceresinde yapılır.
 

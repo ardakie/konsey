@@ -29,6 +29,15 @@ export function runSmoke(win: BrowserWindow): void {
       const rendered = await win.webContents.executeJavaScript(
         "document.querySelector('#flow')?.children.length ?? 0",
       );
+      // Tartis modu: IPC kanali yanit verir, yeni tartisma ekrani cizilir.
+      const debates = await win.webContents.executeJavaScript(
+        "window.konsey.listDebates(null).then((list) => Array.isArray(list))",
+      );
+      const debateScreen = await win.webContents.executeJavaScript(
+        "document.getElementById('new-debate').click(); new Promise((r) => { let n = 0; const t = setInterval(() => { const ok = Boolean(document.querySelector('#flow .debate-new')); if (ok || ++n > 50) { clearInterval(t); r(ok); } }, 100); })",
+      );
+      console.log(`[smoke] debates: ${debates} · debate screen: ${debateScreen}`);
+      if (!debates || !debateScreen) return fail(`debate mode did not load ${errors.join(' | ')} ${await win.webContents.executeJavaScript("document.getElementById('thread-title')?.textContent + ' | ' + (document.querySelector('#flow')?.firstElementChild?.className ?? '')")}`);
       const agents = await checkAvailability();
       console.log(`[smoke] flow nodes: ${rendered}`);
       console.log(`[smoke] agents: ${agents.map((a) => `${a.agent}=${a.available}`).join(', ')}`);

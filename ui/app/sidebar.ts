@@ -1,9 +1,10 @@
 /** Kenar cubugu: proje secici, gorev gecmisi ve ac/kapa anahtarli ajan listesi. */
 import { api } from './api';
-import { newTask, openChat, openRun, pickProject, refreshAgents, refreshQuotas, toggleAgent, useProject } from './actions';
+import { newDebate, newTask, openChat, openRun, pickProject, refreshAgents, refreshQuotas, toggleAgent, useProject } from './actions';
 import { basename, h, icon, morph, relTime, tildify } from './dom';
 import { agents, avatar, invalidate, readiness, register, state } from './state';
 import { L } from '../../src/shared/i18n';
+import { debateItems } from './debate';
 
 const $ = (id: string) => document.getElementById(id)!;
 
@@ -73,7 +74,7 @@ function renderRuns(): void {
     const tone = live ? 'live' : run.phase === 'done' ? 'ok' : run.phase === 'failed' ? 'bad' : 'idle';
     const title = run.prompt.split('\n')[0].trim() || L('Görsel görevi', 'Image task');
     nodes.push(h('li', { 'data-key': run.id }, h('button', {
-      class: `run-item ${state.selectedRunId === run.id ? 'is-on' : ''}`,
+      class: `run-item ${state.debateId === null && state.selectedRunId === run.id ? 'is-on' : ''}`,
       type: 'button',
       title,
       on: { click: () => void openRun(run.id) },
@@ -140,6 +141,8 @@ function renderAgents(): void {
 
 export function renderSidebar(): void {
   renderProject();
+  morph($('debate-list'), debateItems());
+  $('new-debate').classList.toggle('is-on', state.debateId === 'new');
   renderRuns();
   renderAgents();
 }
@@ -147,6 +150,7 @@ export function renderSidebar(): void {
 export function setupSidebar(): void {
   register('sidebar', renderSidebar);
   $('new-task').addEventListener('click', newTask);
+  $('new-debate').addEventListener('click', () => newDebate());
   $('project-switcher').addEventListener('click', (event) => {
     event.stopPropagation();
     openProjectMenu();
